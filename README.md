@@ -9,7 +9,7 @@ Using a spin-wheel interface, households can generate balanced activity plans ac
 
 Built as a lightweight web prototype and currently deployed via GitHub Pages.
 
-**Live App:** https://posh-ib.github.io/spinFamily/
+**Live App:** https://spinfamily.thesimple.ink/
 
 #### Copyright © 2026 Rootlayer. All rights reserved.
 ---
