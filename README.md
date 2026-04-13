@@ -1,5 +1,5 @@
-# SpinFamily
-
+# SpinFamily 
+##### Copyright © 2026 Rootlayer. All rights reserved.
 ---
 
 ## Family Evening Planner Powered by Smart Suggestions
