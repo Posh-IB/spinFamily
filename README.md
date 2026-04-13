@@ -116,3 +116,4 @@ spinFamily/
 ├── index.html
 ├── LICENSE
 └── README.md
+Copyright © 2026 Rootlayer. All rights reserved.
