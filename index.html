@@ -3,138 +3,181 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="SpinFamily is a family evening-planning prototype that uses a playful wheel and curated activity categories to reduce decision fatigue.">
-  <meta name="theme-color" content="#FF6B6B">
-  <title>SpinFamily — Family Evening Planner</title>
+  <meta name="description" content="SpinFamily is a calm, playful family evening planner prototype.">
+  <meta name="theme-color" content="#F6F7F5">
+  <title>SpinFamily — Tonight</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
-    *{box-sizing:border-box;margin:0;padding:0}
-    :root{--primary:#FF6B6B;--secondary:#4ECDC4;--accent:#FFE66D;--background:#F7F9FC;--text:#2D3748;--muted:#718096;--success:#2F855A;--border:#E2E8F0;--shadow:0 4px 20px rgba(0,0,0,.08)}
-    body{font-family:'Nunito',sans-serif;background:var(--background);color:var(--text);min-height:100vh}
-    button,input,select{font:inherit}
-    button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #2B6CB0;outline-offset:3px}
-    .app{max-width:414px;margin:0 auto;min-height:100vh;background:var(--background);box-shadow:0 0 40px rgba(0,0,0,.08);padding-bottom:88px}
-    .header{padding:28px 20px 22px;text-align:center;background:linear-gradient(135deg,var(--primary),#FF8E8E);border-radius:0 0 28px 28px;color:#fff}
-    .header h1{font-size:29px;font-weight:800;letter-spacing:.4px}.header p{font-size:14px;margin-top:6px;line-height:1.4;color:rgba(255,255,255,.94)}
-    .prototype-note{margin:14px 15px 0;padding:12px 14px;border:1px solid #F6AD55;background:#FFFAF0;border-radius:14px;color:#744210;font-size:12px;line-height:1.45}
-    .card{background:#fff;margin:15px;padding:16px;border-radius:20px;box-shadow:var(--shadow)}
-    .card-title{font-size:14px;font-weight:800;margin-bottom:12px;color:#4A5568}
-    .members{display:flex;gap:10px;overflow-x:auto;padding-bottom:3px}.member{border:2px solid transparent;background:transparent;border-radius:16px;padding:5px 7px;cursor:pointer;color:var(--text)}
-    .member.active{border-color:var(--primary);background:#FFF5F5}.member-icon{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-size:23px;background:#EDF2F7;margin:auto}.member-name{display:block;font-size:11px;font-weight:700;margin-top:4px}
-    .member-context{font-size:12px;color:var(--muted);line-height:1.4;margin-top:10px}
-    .wheel-section{text-align:center;padding:6px 20px 18px}.wheel-wrap{position:relative;width:292px;height:292px;margin:8px auto 2px;display:grid;place-items:center}.wheel{position:relative;width:252px;height:252px;border-radius:50%;overflow:hidden;border:8px solid #fff;box-shadow:0 10px 35px rgba(0,0,0,.15);transition:transform 2.4s cubic-bezier(.17,.67,.12,.99)}
-    .seg{position:absolute;width:50%;height:50%;transform-origin:100% 100%;clip-path:polygon(0 0,100% 0,100% 100%)}.s1{background:#FF9AA2;transform:rotate(0deg)}.s2{background:#C7F0A0;transform:rotate(90deg)}.s3{background:#A0C4FF;transform:rotate(180deg)}.s4{background:#BDB2FF;transform:rotate(270deg)}
-    .wheel-center{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:58px;height:58px;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:23px;z-index:3;box-shadow:0 3px 12px rgba(0,0,0,.12)}
-    .pointer{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:26px solid var(--primary);z-index:5}
-    .label{position:absolute;font-size:12px;font-weight:900;color:#1A202C;text-shadow:0 1px #fff}.l1{top:66px;left:121px}.l2{top:120px;right:33px}.l3{bottom:63px;left:126px}.l4{top:121px;left:28px}
-    .spin{border:0;background:linear-gradient(135deg,var(--primary),#FF8E8E);color:#fff;padding:15px 38px;border-radius:999px;font-weight:800;font-size:17px;cursor:pointer;box-shadow:0 6px 18px rgba(255,107,107,.35)}.spin:disabled{opacity:.55;cursor:not-allowed}
-    .small-note{font-size:11px;color:var(--muted);margin:10px auto 0;max-width:330px;line-height:1.45}
-    .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:414px;background:#fff;display:flex;justify-content:space-around;padding:9px 0 20px;border-top:1px solid var(--border);z-index:20}.nav button{border:0;background:transparent;color:#A0AEC0;font-size:11px;font-weight:800;padding:7px 12px;cursor:pointer}.nav button.active{color:var(--primary)}.nav span{display:block;font-size:22px;margin-bottom:2px}
-    .page{display:none}.page.active{display:block}.activity-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #EDF2F7;gap:10px}.activity-row:last-child{border-bottom:0}.activity-main{display:flex;gap:10px;align-items:center}.activity-icon{font-size:22px}.activity-name{font-size:13px;font-weight:800}.activity-meta{font-size:11px;color:var(--muted)}
-    .add-form{display:grid;grid-template-columns:1fr 105px;gap:8px;margin-top:12px}.add-form input,.add-form select{border:1px solid #CBD5E0;border-radius:12px;padding:10px;background:#fff;color:var(--text)}.add-form button{grid-column:1/-1;border:0;border-radius:12px;padding:11px;background:var(--secondary);color:#173B38;font-weight:800;cursor:pointer}.helper{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45}
-    .guide h2,.about h2{font-size:18px;margin-bottom:8px}.guide h3,.about h3{font-size:14px;margin:15px 0 5px}.guide p,.guide li,.about p,.about li{font-size:13px;line-height:1.55;color:#4A5568}.guide ol,.about ul{padding-left:20px}
-    .results{position:fixed;inset:0;background:rgba(247,249,252,.98);z-index:50;display:none;overflow-y:auto}.results.open{display:block}.results-inner{max-width:414px;margin:0 auto;padding:28px 16px 36px}.result-head{text-align:center}.result-head h2{font-size:24px}.result-head p{font-size:12px;color:var(--muted);margin-top:5px}.why{background:#EBF8FF;border:1px solid #90CDF4;border-radius:15px;padding:13px;margin:16px 0;color:#2A4365;font-size:12px;line-height:1.5}.plan-card{background:#fff;border-radius:18px;box-shadow:var(--shadow);padding:15px;margin:11px 0;display:flex;gap:12px;align-items:center}.plan-icon{font-size:28px}.plan-name{font-weight:800;font-size:14px}.plan-meta{font-size:11px;color:var(--muted);margin-top:3px}.actions{display:flex;gap:10px;margin-top:16px}.actions button{flex:1;border:0;border-radius:14px;padding:12px;font-weight:800;cursor:pointer}.again{background:#EDF2F7;color:var(--text)}.accept{background:var(--primary);color:#fff}.close{display:block;margin:12px auto 0;border:0;background:transparent;color:#4A5568;text-decoration:underline;cursor:pointer}
-    .status{margin:15px;padding:12px 14px;border-radius:14px;background:#F0FFF4;border:1px solid #9AE6B4;color:#22543D;font-size:12px;display:none}.status.show{display:block}
-    @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+    *{box-sizing:border-box}
+    :root{
+      --coral:#C84A5A;--coral-dark:#A83847;--teal:#2E7D76;--teal-dark:#235F5A;
+      --yellow:#E9B949;--ink:#24313A;--muted:#617078;--canvas:#F6F7F5;--surface:#FFFFFF;
+      --line:#DCE2DE;--soft:#EEF1EE;--focus:#174E72;--success:#2F6D4A;
+      --shadow:0 8px 26px rgba(36,49,58,.08);--radius:18px;--radius-sm:12px
+    }
+    html{background:var(--canvas);color:var(--ink);font-family:'Nunito',system-ui,sans-serif}
+    body{margin:0;min-height:100vh;background:var(--canvas)}
+    button,input,select{font:inherit;color:inherit}
+    button{cursor:pointer}
+    button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    .app{max-width:760px;margin:0 auto;min-height:100vh;padding-bottom:88px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px;position:sticky;top:0;background:rgba(246,247,245,.96);backdrop-filter:blur(10px);z-index:20;border-bottom:1px solid rgba(220,226,222,.8)}
+    .brand{display:flex;align-items:center;gap:10px}.brand-mark{width:38px;height:38px;border-radius:50%;background:var(--coral);display:grid;place-items:center;color:white;font-weight:900;font-size:18px}.brand strong{display:block;font-size:18px;line-height:1}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:4px}
+    .icon-btn{width:42px;height:42px;border:1px solid var(--line);border-radius:50%;background:var(--surface);display:grid;place-items:center;font-size:18px}
+    .page{display:none;padding:16px 18px 28px}.page.active{display:block}
+    .eyebrow{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin:4px 0 7px}.hero h1{font-size:30px;line-height:1.08;margin:0;max-width:520px}.hero p{color:var(--muted);line-height:1.55;margin:10px 0 0;max-width:610px}
+    .truth-note{margin:16px 0 0;border-left:4px solid var(--yellow);background:#FFF8E5;padding:12px 14px;border-radius:0 var(--radius-sm) var(--radius-sm) 0;font-size:12px;line-height:1.5;color:#5B4A17}
+    .section{margin-top:22px}.section-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:10px}.section-head h2{font-size:17px;margin:0}.section-head p{margin:0;color:var(--muted);font-size:12px}
+    .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:0 2px 10px rgba(36,49,58,.035)}
+    .context-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label,.field legend{font-size:12px;font-weight:800;color:#46545B}.field select,.field input{min-height:44px;border:1px solid #C8D1CC;border-radius:10px;background:#fff;padding:9px 11px}.field-note{font-size:11px;color:var(--muted);line-height:1.4}
+    fieldset.field{border:0;padding:0;margin:0}.segmented{display:flex;gap:7px;flex-wrap:wrap}.segmented button,.chip{border:1px solid #C8D1CC;background:#fff;border-radius:999px;padding:9px 12px;font-size:12px;font-weight:800}.segmented button.active,.chip.active{background:#E6F1EF;border-color:var(--teal);color:var(--teal-dark)}
+    .members{display:flex;gap:9px;overflow-x:auto;padding:3px 2px 5px}.member{min-width:74px;border:1px solid var(--line);background:#fff;border-radius:14px;padding:10px 8px;text-align:center}.member.active{border-color:var(--coral);background:#FFF2F3}.member-avatar{width:38px;height:38px;border-radius:50%;background:var(--soft);display:grid;place-items:center;margin:0 auto 5px;font-weight:800}.member-name{font-size:11px;font-weight:800}
+    .wheel-card{margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:20px 16px 18px;text-align:center;box-shadow:var(--shadow)}
+    .wheel-card h2{margin:0;font-size:18px}.wheel-card>p{margin:6px auto 14px;color:var(--muted);font-size:12px;max-width:420px;line-height:1.45}
+    .wheel-wrap{position:relative;width:250px;height:250px;margin:0 auto 12px;display:grid;place-items:center}.wheel{width:220px;height:220px;border-radius:50%;position:relative;overflow:hidden;border:7px solid #fff;box-shadow:0 10px 24px rgba(36,49,58,.12);transition:transform 1.8s cubic-bezier(.17,.67,.12,.99);background:conic-gradient(var(--coral) 0 25%,var(--teal) 25% 50%,var(--yellow) 50% 75%,#9A8BB7 75% 100%)}
+    .wheel::after{content:'';position:absolute;inset:50%;width:54px;height:54px;transform:translate(-50%,-50%);background:white;border-radius:50%;box-shadow:0 2px 8px rgba(36,49,58,.14)}
+    .pointer{position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-top:25px solid var(--ink);z-index:3}
+    .wheel-label{position:absolute;font-size:10px;font-weight:900;color:white;letter-spacing:.03em;text-shadow:0 1px 2px rgba(0,0,0,.25)}.wl1{top:52px;left:108px}.wl2{top:112px;right:16px}.wl3{bottom:49px;left:112px;color:#3E3412;text-shadow:none}.wl4{top:112px;left:10px}
+    .primary-btn{border:0;border-radius:12px;background:var(--coral);color:#fff;min-height:48px;padding:12px 20px;font-weight:900}.primary-btn:hover{background:var(--coral-dark)}.secondary-btn{border:1px solid var(--line);border-radius:12px;background:#fff;min-height:44px;padding:10px 14px;font-weight:800}.text-btn{border:0;background:transparent;color:var(--teal-dark);font-weight:800;padding:8px}
+    .activity-list{display:grid;gap:10px}.activity-row{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px}.activity-main{display:flex;align-items:center;gap:11px}.activity-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}.activity-name{font-size:13px;font-weight:800}.activity-meta{font-size:11px;color:var(--muted);margin-top:2px}.activity-tag{font-size:10px;border:1px solid var(--line);border-radius:999px;padding:5px 7px;color:var(--muted);white-space:nowrap}
+    .add-form{display:grid;grid-template-columns:minmax(0,1fr) 140px auto;gap:8px}.add-form input,.add-form select{border:1px solid #C8D1CC;border-radius:10px;padding:10px;background:#fff}.add-form button{border:0;border-radius:10px;background:var(--teal);color:#fff;padding:10px 14px;font-weight:800}
+    .family-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.family-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:15px}.family-card h3{margin:0 0 4px;font-size:15px}.family-card p{margin:0;color:var(--muted);font-size:12px;line-height:1.45}.family-card .member-avatar{margin:0 0 10px}
+    .secondary-panel{position:fixed;inset:0;background:rgba(36,49,58,.38);display:none;z-index:60;padding:18px}.secondary-panel.open{display:flex;align-items:flex-start;justify-content:flex-end}.secondary-sheet{width:min(360px,100%);background:#fff;border-radius:18px;padding:14px;box-shadow:var(--shadow);margin-top:54px}.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 10px}.sheet-head h2{font-size:16px;margin:0}.menu-list{display:grid;gap:6px}.menu-item{border:1px solid var(--line);background:#fff;border-radius:12px;text-align:left;padding:12px;font-weight:800}.menu-copy{display:none;border:1px solid var(--line);border-radius:12px;background:var(--canvas);padding:13px;margin-top:8px;font-size:12px;line-height:1.55;color:#46545B}.menu-copy.show{display:block}
+    .bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:760px;background:rgba(255,255,255,.97);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(3,1fr);z-index:30;padding:8px 10px max(10px,env(safe-area-inset-bottom))}.bottom-nav button{border:0;background:transparent;min-height:54px;border-radius:12px;color:#6A777D;font-size:11px;font-weight:900}.bottom-nav button.active{background:#F4E9EA;color:var(--coral-dark)}.bottom-nav span{display:block;font-size:17px;margin-bottom:3px}
+    .results{position:fixed;inset:0;background:var(--canvas);display:none;z-index:70;overflow-y:auto}.results.open{display:block}.results-inner{max-width:680px;margin:0 auto;padding:20px 18px 36px}.results-top{display:flex;align-items:center;justify-content:space-between}.results-top button{border:1px solid var(--line);background:#fff;width:40px;height:40px;border-radius:50%}.result-title{margin-top:20px}.result-title h2{font-size:27px;margin:0}.result-title p{margin:6px 0 0;color:var(--muted);font-size:12px}.summary-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:15px 0}.summary-item{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px}.summary-item strong{display:block;font-size:13px}.summary-item span{font-size:10px;color:var(--muted)}
+    .why{background:#EAF3F2;border-left:4px solid var(--teal);border-radius:0 12px 12px 0;padding:13px 14px;font-size:12px;line-height:1.55;color:#244D49}.plan-list{display:grid;gap:10px;margin-top:14px}.plan-card{display:grid;grid-template-columns:34px 1fr auto;gap:11px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:13px}.order{width:30px;height:30px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-size:11px;font-weight:900}.plan-name{font-size:13px;font-weight:900}.plan-meta{font-size:11px;color:var(--muted);margin-top:2px}.swap-btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 9px;font-size:10px;font-weight:800}.result-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:16px}.result-actions .primary-btn{grid-column:1/-1}.coming{font-size:10px;color:var(--muted);text-align:center;margin-top:10px}
+    .status{display:none;margin:14px 0;border:1px solid #BDD5C5;background:#EDF7F0;color:#28543A;border-radius:12px;padding:11px 13px;font-size:12px}.status.show{display:block}
+    @media(max-width:560px){.context-grid,.family-grid{grid-template-columns:1fr}.add-form{grid-template-columns:1fr}.summary-bar{grid-template-columns:1fr 1fr}.summary-item:last-child{grid-column:1/-1}.hero h1{font-size:27px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}.wheel{transition:none!important}}
   </style>
 </head>
 <body>
 <div class="app">
-  <header class="header"><h1>SpinFamily</h1><p>A playful family evening planner for getting past “what should we do tonight?”</p></header>
-  <div class="prototype-note"><strong>Public prototype:</strong> plans are created from curated categories and random selection. This version does not use machine learning, cloud sync, weather data, or personalized recommendation models.</div>
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark" aria-hidden="true">S</div><div><strong>SpinFamily</strong><small>Family evening planner</small></div></div>
+    <button class="icon-btn" id="menuBtn" aria-label="Open secondary menu" aria-expanded="false">☰</button>
+  </header>
 
-  <main id="spinPage" class="page active">
-    <section class="card" aria-labelledby="familyTitle">
-      <div class="card-title" id="familyTitle">Who is helping choose?</div>
-      <div class="members" id="members">
-        <button class="member active" data-member="Mom"><span class="member-icon">👩</span><span class="member-name">Mom</span></button>
-        <button class="member" data-member="Dad"><span class="member-icon">👨</span><span class="member-name">Dad</span></button>
-        <button class="member" data-member="Emma"><span class="member-icon">👧</span><span class="member-name">Emma</span></button>
-        <button class="member" data-member="Lucas"><span class="member-icon">👦</span><span class="member-name">Lucas</span></button>
-      </div>
-      <p class="member-context" id="memberContext">Mom is selected. In this prototype, member selection is only used as planning context and does not personalize recommendations.</p>
+  <main id="tonightPage" class="page active">
+    <section class="hero">
+      <div class="eyebrow">Tonight</div>
+      <h1>Make tonight easier to decide.</h1>
+      <p>Set the household context, spin once, and get a simple three-part evening plan.</p>
+      <div class="truth-note"><strong>Gate 2 prototype:</strong> the controls below are staged for Planner Engine v2. They are captured and shown with the plan, but they do not yet change recommendation scoring or eligibility.</div>
     </section>
 
-    <section class="wheel-section" aria-labelledby="spinTitle">
-      <h2 id="spinTitle" style="font-size:18px;margin-top:8px">Spin an evening plan</h2>
-      <div class="wheel-wrap" aria-hidden="true">
-        <div class="pointer"></div>
-        <div class="wheel" id="wheel">
-          <div class="seg s1"></div><div class="seg s2"></div><div class="seg s3"></div><div class="seg s4"></div>
-          <div class="wheel-center">✨</div>
-        </div>
-        <div class="label l1">CHORES</div><div class="label l2">OUTDOOR</div><div class="label l3">FAMILY</div><div class="label l4">SELF CARE</div>
+    <section class="section">
+      <div class="section-head"><h2>Who’s participating?</h2><p>Choose one or more</p></div>
+      <div class="members" id="tonightMembers">
+        <button class="member active" data-member="Mom" aria-pressed="true"><span class="member-avatar">M</span><span class="member-name">Mom</span></button>
+        <button class="member active" data-member="Dad" aria-pressed="true"><span class="member-avatar">D</span><span class="member-name">Dad</span></button>
+        <button class="member active" data-member="Emma" aria-pressed="true"><span class="member-avatar">E</span><span class="member-name">Emma</span></button>
+        <button class="member active" data-member="Lucas" aria-pressed="true"><span class="member-avatar">L</span><span class="member-name">Lucas</span></button>
       </div>
-      <button class="spin" id="spinBtn">SPIN TONIGHT</button>
-      <p class="small-note">Current planner behavior: select three distinct categories, randomly select one activity from each, then arrange the result within simple sequencing rules. Early bedtime is always last. Planner Engine v2 will expand this logic in a later gate.</p>
     </section>
-    <div id="acceptedStatus" class="status" role="status"></div>
+
+    <section class="section card" aria-labelledby="contextTitle">
+      <div class="section-head"><h2 id="contextTitle">Tonight’s context</h2><p>Staged for Gate 3</p></div>
+      <div class="context-grid">
+        <div class="field"><label for="timeAvailable">Time available</label><select id="timeAvailable"><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60" selected>60 minutes</option><option value="90">90 minutes</option></select></div>
+        <div class="field"><label for="startTime">Start time</label><input id="startTime" type="time" value="18:00"></div>
+        <fieldset class="field full"><legend>Energy</legend><div class="segmented" data-group="energy"><button type="button" data-value="Low">Low</button><button type="button" class="active" data-value="Medium">Medium</button><button type="button" data-value="High">High</button></div></fieldset>
+        <fieldset class="field full"><legend>Setting</legend><div class="segmented" data-group="setting"><button type="button" data-value="Indoor">Indoor</button><button type="button" data-value="Outdoor">Outdoor</button><button type="button" class="active" data-value="Either">Either</button></div></fieldset>
+      </div>
+    </section>
+
+    <section class="wheel-card" aria-labelledby="wheelTitle">
+      <h2 id="wheelTitle">Spin tonight’s anchor</h2>
+      <p>The wheel remains the playful centerpiece. In Gate 2 it still triggers the existing random planner; Gate 3 will make the landed category causal.</p>
+      <div class="wheel-wrap" aria-hidden="true"><div class="pointer"></div><div class="wheel" id="wheel"></div><div class="wheel-label wl1">CHORES</div><div class="wheel-label wl2">OUTDOOR</div><div class="wheel-label wl3">FAMILY</div><div class="wheel-label wl4">SELF CARE</div></div>
+      <button class="primary-btn" id="spinBtn">Spin tonight</button>
+      <div id="acceptedStatus" class="status" role="status"></div>
+    </section>
   </main>
 
   <main id="activitiesPage" class="page">
-    <section class="card">
-      <div class="card-title">Curated + custom activities</div>
-      <div id="activityList"></div>
-      <form class="add-form" id="activityForm">
-        <input id="activityName" maxlength="60" placeholder="Add a family-friendly activity" required aria-label="Activity name">
-        <select id="activityCategory" aria-label="Activity category"><option value="chore">Chores</option><option value="outdoor">Outdoor</option><option value="family">Family</option><option value="selfcare">Self Care</option></select>
-        <button type="submit">Add activity for this session</button>
-      </form>
-      <p class="helper">Custom activities are stored only in memory in this Gate 1 prototype and reset when the page refreshes. Local persistence is scheduled for Gate 4.</p>
+    <section class="hero"><div class="eyebrow">Activities</div><h1>Keep the activity pool useful.</h1><p>Browse the curated set and add a family-friendly custom activity for this browser session.</p></section>
+    <section class="section card">
+      <div class="section-head"><h2>Add an activity</h2><p>Session only</p></div>
+      <form class="add-form" id="activityForm"><input id="activityName" maxlength="60" placeholder="e.g. Build a pillow fort" required aria-label="Activity name"><select id="activityCategory" aria-label="Activity category"><option value="chore">Chores</option><option value="outdoor">Outdoor</option><option value="family">Family</option><option value="selfcare">Self Care</option></select><button type="submit">Add</button></form>
+      <p class="field-note">Custom activities reset on refresh until Gate 4 adds local persistence.</p>
     </section>
+    <section class="section"><div class="section-head"><h2>Activity library</h2><p id="activityCount"></p></div><div class="activity-list" id="activityList"></div></section>
   </main>
 
-  <main id="guidePage" class="page guide">
-    <section class="card"><h2>Quick Start</h2><ol><li>Choose the family member helping with the decision.</li><li>Spin the wheel.</li><li>Review the three selected activities in their suggested order.</li><li>Spin again if the plan does not fit tonight.</li><li>Add a custom activity from the Activities tab if needed.</li></ol><h3>What the prototype does</h3><p>SpinFamily currently combines curated activity lists with random selection and a small set of sequencing rules. Chores are placed before leisure/wind-down when present, self-care is placed toward the end, and Early bedtime routine is always the final activity. The recommendation engine is not yet context-aware.</p><h3>What comes next</h3><p>Planner Engine v2 will add time constraints, household context, activity metadata, repetition controls, richer sequencing constraints, and explainable scoring before any machine-learning layer is considered.</p></section>
+  <main id="familyPage" class="page">
+    <section class="hero"><div class="eyebrow">Family</div><h1>Your household planning context.</h1><p>Member cards stay parent-managed. Personal attributes and recommendation effects arrive only when Gate 3 defines the supporting planner metadata.</p></section>
+    <section class="section"><div class="family-grid" id="familyGrid"></div></section>
+    <section class="section card"><div class="section-head"><h2>Privacy direction</h2><p>Local-first</p></div><p class="field-note">No child email, child-owned login, or behavioral profiling is required for the validation build. Persistent household state is scheduled for Gate 4.</p></section>
   </main>
 
-  <main id="aboutPage" class="page about">
-    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Random three-category evening plans with simple logical sequencing</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Cloud accounts or cross-device sync</li><li>Weather-aware suggestions</li><li>Validated streak or variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
-  </main>
-
-  <nav class="nav" aria-label="Primary navigation">
-    <button class="active" data-page="spinPage"><span>🎡</span>Spin</button>
-    <button data-page="activitiesPage"><span>🧩</span>Activities</button>
-    <button data-page="guidePage"><span>📖</span>Guide</button>
-    <button data-page="aboutPage"><span>ℹ️</span>About</button>
+  <nav class="bottom-nav" aria-label="Primary navigation">
+    <button class="active" data-page="tonightPage"><span>◉</span>Tonight</button>
+    <button data-page="activitiesPage"><span>▦</span>Activities</button>
+    <button data-page="familyPage"><span>◎</span>Family</button>
   </nav>
 </div>
 
-<section class="results" id="results" aria-modal="true" role="dialog" aria-labelledby="resultTitle">
-  <div class="results-inner"><div class="result-head"><h2 id="resultTitle">Tonight’s plan</h2><p id="resultSubtitle"></p></div><div class="why" id="whyText"></div><div id="planCards"></div><div class="actions"><button class="again" id="againBtn">Spin again</button><button class="accept" id="acceptBtn">Use this plan</button></div><button class="close" id="closeBtn">Close</button></div>
+<div class="secondary-panel" id="secondaryPanel" aria-hidden="true">
+  <section class="secondary-sheet" role="dialog" aria-modal="true" aria-labelledby="secondaryTitle">
+    <div class="sheet-head"><h2 id="secondaryTitle">More</h2><button class="icon-btn" id="closeMenuBtn" aria-label="Close secondary menu">×</button></div>
+    <div class="menu-list">
+      <button class="menu-item" data-copy="guideCopy">Guide</button><div class="menu-copy" id="guideCopy"><strong>How it works now:</strong> choose household context, spin, review three selected activities, and use or respin the plan. Gate 3 will make the wheel anchor and context inputs affect recommendation logic.</div>
+      <button class="menu-item" data-copy="aboutCopy">About</button><div class="menu-copy" id="aboutCopy">SpinFamily is a Rootlayer family evening-planning prototype focused on reducing nightly decision friction with a playful but explainable planning experience.</div>
+      <button class="menu-item" data-copy="accountCopy">Account</button><div class="menu-copy" id="accountCopy">Cloud accounts and cross-device synchronization are not implemented in this version.</div>
+      <button class="menu-item" data-copy="privacyCopy">Privacy</button><div class="menu-copy" id="privacyCopy">The vNext foundation is parent-managed and local-first. Child-owned accounts and unnecessary child-identifying data are out of scope.</div>
+      <button class="menu-item" data-copy="settingsCopy">Settings</button><div class="menu-copy" id="settingsCopy">Planner defaults and persistent settings are scheduled for the local-state gate.</div>
+    </div>
+  </section>
+</div>
+
+<section class="results" id="results" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+  <div class="results-inner">
+    <div class="results-top"><div class="brand"><div class="brand-mark">S</div><div><strong>SpinFamily</strong><small>Tonight’s plan</small></div></div><button id="closeResults" aria-label="Close plan">×</button></div>
+    <div class="result-title"><div class="eyebrow">Suggested plan</div><h2 id="resultTitle">Tonight, sorted.</h2><p id="resultSubtitle"></p></div>
+    <div class="summary-bar"><div class="summary-item"><strong id="summaryDuration">—</strong><span>Selected activity time</span></div><div class="summary-item"><strong id="summaryEnergy">—</strong><span>Staged energy</span></div><div class="summary-item"><strong id="summarySetting">—</strong><span>Staged setting</span></div></div>
+    <div class="why" id="whyText"></div>
+    <div class="plan-list" id="planCards"></div>
+    <div class="result-actions"><button class="secondary-btn" id="againBtn">Respin</button><button class="secondary-btn" id="swapNoticeBtn">Swap</button><button class="primary-btn" id="acceptBtn">Use this plan</button></div>
+    <p class="coming">Individual constrained swaps and completion tracking are interface placeholders until later gates implement the supporting logic/state.</p>
+  </div>
 </section>
 
 <script>
 const defaults={
-  chore:[['🧹','Clean the kitchen',20],['🧺','Fold a laundry load',15],['🧸','Organize toys',20],['✨','Wipe counters',10],['🧽','Quick room reset',15]],
-  outdoor:[['🚶','Take a family walk',30],['🌳','Visit the park',45],['🌱','Tend the garden',30],['🚲','Family bike ride',40],['🌙','Go stargazing',20]],
-  family:[['🎲','Play a board game',45],['🍳','Cook together',40],['📚','Read a story together',25],['🎬','Family movie night',90],['🎨','Arts and crafts',35]],
-  selfcare:[['📖','Quiet reading',30],['🧘','Family breathing break',15],['🛁','Wind-down bath',30],['😴','Early bedtime routine',45],['✍️','Journal or draw',20]]
+  chore:[['Clean the kitchen',20],['Fold a laundry load',15],['Organize toys',20],['Wipe counters',10],['Quick room reset',15]],
+  outdoor:[['Take a family walk',30],['Visit the park',45],['Tend the garden',30],['Family bike ride',40],['Go stargazing',20]],
+  family:[['Play a board game',45],['Cook together',40],['Read a story together',25],['Family movie night',90],['Arts and crafts',35]],
+  selfcare:[['Quiet reading',30],['Family breathing break',15],['Wind-down bath',30],['Early bedtime routine',45],['Journal or draw',20]]
 };
 const labels={chore:'Chores',outdoor:'Outdoor',family:'Family',selfcare:'Self Care'};
-let custom=[];let currentMember='Mom';let currentPlan=[];let rotation=0;
+const colors={chore:'#C84A5A',outdoor:'#2E7D76',family:'#E9B949',selfcare:'#9A8BB7'};
 const prohibited=[/\bfuck\b/i,/\bshit\b/i,/\bbitch\b/i,/\bcocaine\b/i,/\bheroin\b/i,/\bmeth\b/i,/\bporn\b/i];
 const $=id=>document.getElementById(id);
+let custom=[];let rotation=0;let energy='Medium';let setting='Either';let currentPlan=[];
+const participating=new Set(['Mom','Dad','Emma','Lucas']);
 function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function pick(arr){return arr[Math.floor(Math.random()*arr.length)];}
-function sequencePlan(items){
-  const randomized=shuffle(items);
-  const bedtime=randomized.filter(item=>item.name==='Early bedtime routine');
-  const chores=randomized.filter(item=>item.category==='chore'&&item.name!=='Early bedtime routine');
-  const windDown=randomized.filter(item=>item.category==='selfcare'&&item.name!=='Early bedtime routine');
-  const middle=randomized.filter(item=>item.category!=='chore'&&item.category!=='selfcare'&&item.name!=='Early bedtime routine');
-  return [...shuffle(chores),...shuffle(middle),...shuffle(windDown),...bedtime];
-}
-function generatePlan(){const categories=shuffle(['chore','outdoor','family','selfcare']).slice(0,3);const selected=categories.map(category=>{const pool=[...defaults[category],...custom.filter(x=>x.category===category).map(x=>['⭐',x.name,20])];const [icon,name,duration]=pick(pool);return{category,icon,name,duration};});currentPlan=sequencePlan(selected);return currentPlan;}
-function showResults(){const plan=generatePlan();$('resultSubtitle').textContent=`Planning context: ${currentMember}`;$('whyText').innerHTML=`<strong>Why this plan:</strong> this prototype selected three different categories (${plan.map(x=>labels[x.category]).join(', ')}), randomly chose one activity from each, then applied simple sequencing rules so setup comes before wind-down and Early bedtime routine is always last. No personal history, weather, or machine-learning model was used.`;$('planCards').innerHTML=plan.map(x=>`<article class="plan-card"><div class="plan-icon">${x.icon}</div><div><div class="plan-name">${escapeHtml(x.name)}</div><div class="plan-meta">${labels[x.category]} · about ${x.duration} min</div></div></article>`).join('');$('results').classList.add('open');$('acceptBtn').focus();}
-function spin(){const btn=$('spinBtn');btn.disabled=true;rotation+=1440+Math.floor(Math.random()*720);$('wheel').style.transform=`rotate(${rotation}deg)`;setTimeout(()=>{showResults();btn.disabled=false;},900);}
 function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
-function renderActivities(){const rows=[];Object.entries(defaults).forEach(([category,items])=>items.forEach(([icon,name,duration])=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-icon">${icon}</span><div><div class="activity-name">${escapeHtml(name)}</div><div class="activity-meta">${labels[category]} · ${duration} min · curated</div></div></div></div>`)));custom.forEach(x=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-icon">⭐</span><div><div class="activity-name">${escapeHtml(x.name)}</div><div class="activity-meta">${labels[x.category]} · custom · session only</div></div></div></div>`));$('activityList').innerHTML=rows.join('');}
+function sequencePlan(items){const randomized=shuffle(items);const bedtime=randomized.filter(x=>x.name==='Early bedtime routine');const chores=randomized.filter(x=>x.category==='chore'&&x.name!=='Early bedtime routine');const windDown=randomized.filter(x=>x.category==='selfcare'&&x.name!=='Early bedtime routine');const middle=randomized.filter(x=>x.category!=='chore'&&x.category!=='selfcare'&&x.name!=='Early bedtime routine');return[...shuffle(chores),...shuffle(middle),...shuffle(windDown),...bedtime];}
+function generatePlan(){const categories=shuffle(['chore','outdoor','family','selfcare']).slice(0,3);const selected=categories.map(category=>{const pool=[...defaults[category],...custom.filter(x=>x.category===category).map(x=>[x.name,20])];const [name,duration]=pick(pool);return{category,name,duration};});currentPlan=sequencePlan(selected);return currentPlan;}
+function stagedContext(){return{members:[...participating],minutes:Number($('timeAvailable').value),start:$('startTime').value||'Now',energy,setting};}
+function showResults(){const plan=generatePlan();const ctx=stagedContext();const total=plan.reduce((s,x)=>s+x.duration,0);$('resultSubtitle').textContent=`${ctx.members.length} participant${ctx.members.length===1?'':'s'} · starts ${ctx.start} · ${ctx.minutes} min available`;$('summaryDuration').textContent=`${total} min`;$('summaryEnergy').textContent=ctx.energy;$('summarySetting').textContent=ctx.setting;$('whyText').innerHTML=`<strong>Why this plan:</strong> Gate 2 still uses the accepted Gate 1 selection method: three distinct categories, one random activity from each, then logical sequencing. The context shown above is staged for Gate 3 and did not affect these selections.`;$('planCards').innerHTML=plan.map((x,i)=>`<article class="plan-card"><div class="order">${i+1}</div><div><div class="plan-name">${escapeHtml(x.name)}</div><div class="plan-meta">${labels[x.category]} · about ${x.duration} min</div></div><button class="swap-btn" type="button" disabled title="Constrained swap arrives in Gate 3">Swap</button></article>`).join('');$('results').classList.add('open');$('closeResults').focus();}
+function spin(){const btn=$('spinBtn');btn.disabled=true;rotation+=1080+Math.floor(Math.random()*720);$('wheel').style.transform=`rotate(${rotation}deg)`;setTimeout(()=>{showResults();btn.disabled=false;},650);}
+function renderActivities(){const rows=[];Object.entries(defaults).forEach(([category,items])=>items.forEach(([name,duration])=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-dot" style="background:${colors[category]}"></span><div><div class="activity-name">${escapeHtml(name)}</div><div class="activity-meta">${labels[category]} · ${duration} min</div></div></div><span class="activity-tag">Curated</span></div>`)));custom.forEach(x=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-dot" style="background:${colors[x.category]}"></span><div><div class="activity-name">${escapeHtml(x.name)}</div><div class="activity-meta">${labels[x.category]} · approx. 20 min</div></div></div><span class="activity-tag">Session</span></div>`));$('activityList').innerHTML=rows.join('');$('activityCount').textContent=`${rows.length} available`;}
+function renderFamily(){const data=[['Mom','Parent-managed planning member'],['Dad','Parent-managed planning member'],['Emma','Child profile placeholder'],['Lucas','Child profile placeholder']];$('familyGrid').innerHTML=data.map(([name,desc])=>`<article class="family-card"><div class="member-avatar">${name[0]}</div><h3>${name}</h3><p>${desc}. No personal scoring attributes are active yet.</p></article>`).join('');}
 function addActivity(e){e.preventDefault();const name=$('activityName').value.trim();const category=$('activityCategory').value;if(!name)return;if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}custom.push({name,category});$('activityName').value='';renderActivities();}
-function switchPage(pageId,button){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
-document.querySelectorAll('.member').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.member').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentMember=btn.dataset.member;$('memberContext').textContent=`${currentMember} is selected. In this prototype, member selection is only used as planning context and does not personalize recommendations.`;}));
-document.querySelectorAll('.nav button').forEach(btn=>btn.addEventListener('click',()=>switchPage(btn.dataset.page,btn)));
-$('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',()=>{$('results').classList.remove('open');$('acceptedStatus').textContent='Plan selected for tonight. This prototype does not record completion, streaks, or long-term history yet.';$('acceptedStatus').classList.add('show');});$('activityForm').addEventListener('submit',addActivity);document.addEventListener('keydown',e=>{if(e.key==='Escape')$('results').classList.remove('open');});renderActivities();
+function switchPage(pageId,btn){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
+document.querySelectorAll('.bottom-nav button').forEach(btn=>btn.addEventListener('click',()=>switchPage(btn.dataset.page,btn)));
+document.querySelectorAll('#tonightMembers .member').forEach(btn=>btn.addEventListener('click',()=>{const name=btn.dataset.member;if(participating.has(name)&&participating.size===1)return;if(participating.has(name)){participating.delete(name);btn.classList.remove('active');btn.setAttribute('aria-pressed','false');}else{participating.add(name);btn.classList.add('active');btn.setAttribute('aria-pressed','true');}}));
+document.querySelectorAll('.segmented').forEach(group=>group.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{group.querySelectorAll('button').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(group.dataset.group==='energy')energy=btn.dataset.value;if(group.dataset.group==='setting')setting=btn.dataset.value;})));
+$('menuBtn').addEventListener('click',()=>{$('secondaryPanel').classList.add('open');$('secondaryPanel').setAttribute('aria-hidden','false');$('menuBtn').setAttribute('aria-expanded','true');$('closeMenuBtn').focus();});
+function closeMenu(){$('secondaryPanel').classList.remove('open');$('secondaryPanel').setAttribute('aria-hidden','true');$('menuBtn').setAttribute('aria-expanded','false');$('menuBtn').focus();}
+$('closeMenuBtn').addEventListener('click',closeMenu);$('secondaryPanel').addEventListener('click',e=>{if(e.target===$('secondaryPanel'))closeMenu();});
+document.querySelectorAll('.menu-item').forEach(btn=>btn.addEventListener('click',()=>{const target=$(btn.dataset.copy);const open=target.classList.contains('show');document.querySelectorAll('.menu-copy').forEach(x=>x.classList.remove('show'));if(!open)target.classList.add('show');}));
+$('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{$('results').classList.remove('open');setTimeout(spin,60);});$('closeResults').addEventListener('click',()=>$('results').classList.remove('open'));$('swapNoticeBtn').addEventListener('click',()=>alert('Constrained individual swaps are scheduled for Planner Engine v2 in Gate 3.'));$('acceptBtn').addEventListener('click',()=>{$('results').classList.remove('open');$('acceptedStatus').textContent='Plan selected for tonight. Completion history and streaks are not recorded yet.';$('acceptedStatus').classList.add('show');});$('activityForm').addEventListener('submit',addActivity);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('results').classList.contains('open'))$('results').classList.remove('open');else if($('secondaryPanel').classList.contains('open'))closeMenu();}});
+renderActivities();renderFamily();
 </script>
 </body>
 </html>
