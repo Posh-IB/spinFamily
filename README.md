@@ -1,120 +1,116 @@
-# SpinFamily 
-##### Copyright © 2026 Rootlayer. All rights reserved.
----
+# SpinFamily
 
-## Family Evening Planner Powered by Smart Suggestions
+Copyright © 2026 Rootlayer. All rights reserved.
 
-SpinFamily is a family-focused planning app that turns evening routines into a fun, structured experience.  
-Using a spin-wheel interface, households can generate balanced activity plans across chores, outdoor time, family bonding, and self-care.
+## Family Evening Planner
 
-Built as a lightweight web prototype and currently deployed via GitHub Pages.
+SpinFamily is a lightweight family evening-planning prototype designed to reduce the nightly “what should we do?” loop. The current public prototype uses a playful spin-wheel interaction, curated activity categories, random activity selection, and simple sequencing rules.
 
-**Live App:** https://spinfamily.thesimple.ink/
+**Current Gate:** Gate 0–1 — Preserve Prototype + Product Truth  
+**Managed deployment:** Netlify  
+**Repository:** `Posh-IB/spinFamily`
 
-#### Copyright © 2026 Rootlayer. All rights reserved.
----
+> Product-truth note: the current prototype does **not** use machine learning, personalized recommendation models, weather data, cloud accounts, cross-device sync, or validated streak/variety analytics.
 
 ## Core Concept
 
-Many families struggle with unstructured evenings, screen-time overload, repeated routines, or decision fatigue.
+SpinFamily helps households move from indecision to a usable evening plan through:
 
-SpinFamily solves that by combining:
+- a participatory spin interaction
+- curated activity categories
+- quick three-activity plans
+- basic logical sequencing
+- family participation
+- session-only custom activities
 
-- Gamified decision-making
-- Balanced activity categories
-- Quick evening plans
-- Family participation
-- Positive routine reinforcement
+Instead of asking *“What should we do tonight?”* — spin, review, and choose.
 
-Instead of asking *"What should we do tonight?"* — spin and go.
-
----
-
-## Current Features
+## Current Prototype Features
 
 ### Spin Wheel Planner
 
-Generate a randomized evening plan using curated activity categories:
+Each spin selects three distinct categories from:
 
 - Chores
-- Outdoor Activities
-- Family Time
+- Outdoor
+- Family
 - Self Care
 
-### Dynamic Evening Plans
+One available activity is then randomly selected from each chosen category.
 
-Each spin creates a custom routine with:
+### Logical Plan Sequencing
 
-- Activity cards
-- Estimated durations
-- Timeline sequencing
-- Swap activity options
+Selected activities are ordered using simple deterministic constraints after random selection:
 
-### Family Profiles
+- chores/setup activities come earlier when present
+- family/outdoor activities may vary in the middle
+- self-care activities trend later
+- **Early bedtime routine is always the final activity when selected**
 
-Prototype includes multiple household members:
+This is a prototype sequencing layer, not Planner Engine v2.
+
+### Family Member Context
+
+Prototype household members include:
 
 - Mom
 - Dad
 - Emma
 - Lucas
 
+Selecting a member currently changes planning context only. It does **not** personalize or score recommendations.
+
 ### Custom Activities
 
-Users can create their own activities and assign:
+Users can add an activity name and category for the current browser session. Custom activities reset on refresh. Local persistence is scheduled for a later gate.
 
-- Name
-- Category
-- Duration
+### Family-Friendly Text Screening
 
-### Content Safety Layer
+Custom activity names receive basic client-side screening for a small set of inappropriate terms. This is not represented as complete moderation or a guarantee of family safety.
 
-Includes front-end moderation logic to block inappropriate activity names.
+### Explainable Prototype Output
 
-### Engagement Stats
+The results screen states how the plan was produced: category selection, random activity selection, and sequencing rules. It does not display simulated ML, weather, or behavioral insights.
 
-Tracks:
+## Not Implemented Yet
 
-- Streaks
-- Plans made
-- Variety score
+The current prototype does not claim the following as live capabilities:
 
----
+- machine-learning recommendations
+- personalized member scoring
+- account authentication
+- cloud or cross-device synchronization
+- weather-aware planning
+- validated streak or variety analytics
+- persistent completion history
+- full Planner Engine v2 constraints/scoring
 
-## Tech Stack (Current Version)
+## Tech Stack
 
 | Layer | Technology |
-|------|------------|
+| --- | --- |
 | Frontend | HTML5 |
 | Styling | CSS3 |
 | Logic | Vanilla JavaScript |
-| Hosting | GitHub Pages |
+| Managed hosting | Netlify |
+| Source control | GitHub |
 
----
+## Development State
 
-## Project Structure
-Live Demo
+The historical public prototype is preserved separately for evidence. Current vNext work follows the sequence:
 
-Visit the live prototype:
+**Preserve → Product Truth → UI → Planner → Persistence → Validation → ML Decision**
 
-https://posh-ib.github.io/spinFamily/
-License
+The differentiating Planner Engine v2 logic is intended to follow Rootlayer's private-core/public-demo boundary rather than expanding proprietary recommendation logic in the public prototype repository.
 
-MIT License
+## Historical Files
 
-Author
+Earlier prototype HTML variants remain in the repository as historical development artifacts. They are not the canonical current product surface. The canonical application entry point is `index.html`.
 
-Built by Posh-IB
+## License
 
-Final Note
+See `LICENSE`.
 
-This version proves the concept.
+## Author
 
-The next version builds the business.
-
-```text
-spinFamily/
-├── index.html
-├── LICENSE
-└── README.md
-Copyright © 2026 Rootlayer. All rights reserved.
+Built by Posh-IB / Rootlayer.
