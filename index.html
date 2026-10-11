@@ -64,6 +64,16 @@
     @media (hover:hover){.spin:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 11px 25px #e35a7580}.member:hover{transform:translateY(-2px)}}
     @media (max-width:359px){.wheel-wrap{width:260px;height:260px}.wheel{width:232px;height:232px}.label{font-size:11px}}
     @media (prefers-reduced-motion:reduce){.member,.spin{transition:none!important}}
+
+    /* Upgrade original wheel mechanics without replacing the familiar layout. */
+    .wheel{background:conic-gradient(from 0deg,#FF9AA2 0 90deg,#C7F0A0 90deg 180deg,#A0C4FF 180deg 270deg,#BDB2FF 270deg 360deg);transition:transform 2.4s cubic-bezier(.12,.7,.12,1)}
+    .seg{display:none}
+    .wheel .rotating-wheel-label{position:absolute;color:#273b48;font-weight:900;font-size:11px;line-height:1.1;text-align:center;text-shadow:0 1px 2px #fff9;z-index:2}
+    .wheel .rw1{top:19%;right:12%}.wheel .rw2{bottom:19%;right:12%}.wheel .rw3{bottom:19%;left:12%}.wheel .rw4{top:19%;left:12%}
+    .wheel-wrap>.label{display:none}
+    .plan-card{align-items:center}
+    .plan-meta{font-size:12px;line-height:1.5}
+    @media(prefers-reduced-motion:reduce){.wheel{transition:none!important}}
   </style>
 </head>
 <body>
@@ -80,21 +90,21 @@
         <button class="member" data-member="Emma"><span class="member-icon">👧</span><span class="member-name">Emma</span></button>
         <button class="member" data-member="Lucas"><span class="member-icon">👦</span><span class="member-name">Lucas</span></button>
       </div>
-      <p class="member-context" id="memberContext">Mom is selected. In this prototype, member selection is only used as planning context and does not personalize recommendations.</p>
+      <p class="member-context" id="memberContext">Mom is selected. Member selection is for this session only; recommendations are not personalized by member.</p>
     </section>
 
     <section class="wheel-section" aria-labelledby="spinTitle">
-      <h2 id="spinTitle" style="font-size:18px;margin-top:8px">Spin an evening plan</h2>
+      <h2 id="spinTitle" style="font-size:18px;margin-top:8px">Spin your next two hours</h2>
       <div class="wheel-wrap" aria-hidden="true">
         <div class="pointer"></div>
         <div class="wheel" id="wheel">
           <div class="seg s1"></div><div class="seg s2"></div><div class="seg s3"></div><div class="seg s4"></div>
-          <div class="wheel-center">✨</div>
+          <div class="wheel-center">✨</div><span class="rotating-wheel-label rw1">CHORES</span><span class="rotating-wheel-label rw2">OUTDOOR</span><span class="rotating-wheel-label rw3">FAMILY</span><span class="rotating-wheel-label rw4">SELF CARE</span>
         </div>
         <div class="label l1">CHORES</div><div class="label l2">OUTDOOR</div><div class="label l3">FAMILY</div><div class="label l4">SELF CARE</div>
       </div>
       <button class="spin" id="spinBtn">SPIN TONIGHT</button>
-      <p class="small-note">Current planner behavior: select three distinct categories, randomly select one activity from each, then arrange the result within simple sequencing rules. Early bedtime is always last. Planner Engine v2 will expand this logic in a later gate.</p>
+      <p class="small-note">Spin to choose your starting category. SpinFamily builds a two-hour plan from the current time, with bedtime last when included. Activity times are estimates; you choose whether to use the plan.</p>
     </section>
     <div id="acceptedStatus" class="status" role="status"></div>
   </main>
@@ -153,12 +163,82 @@ function sequencePlan(items){
   const middle=randomized.filter(item=>item.category!=='chore'&&item.category!=='selfcare'&&item.name!=='Early bedtime routine');
   return [...shuffle(chores),...shuffle(middle),...shuffle(windDown),...bedtime];
 }
-function generatePlan(){const categories=shuffle(['chore','outdoor','family','selfcare']).slice(0,3);const selected=categories.map(category=>{const pool=[...defaults[category],...custom.filter(x=>x.category===category).map(x=>['⭐',x.name,20])];const [icon,name,duration]=pick(pool);return{category,icon,name,duration};});currentPlan=sequencePlan(selected);return currentPlan;}
-function showResults(){const plan=generatePlan();$('resultSubtitle').textContent=`Planning context: ${currentMember}`;$('whyText').innerHTML=`<strong>Why this plan:</strong> this prototype selected three different categories (${plan.map(x=>labels[x.category]).join(', ')}), randomly chose one activity from each, then applied simple sequencing rules so setup comes before wind-down and Early bedtime routine is always last. No personal history, weather, or machine-learning model was used.`;$('planCards').innerHTML=plan.map(x=>`<article class="plan-card"><div class="plan-icon">${x.icon}</div><div><div class="plan-name">${escapeHtml(x.name)}</div><div class="plan-meta">${labels[x.category]} · about ${x.duration} min</div></div></article>`).join('');$('results').classList.add('open');$('acceptBtn').focus();}
-function spin(){const btn=$('spinBtn');btn.disabled=true;rotation+=1440+Math.floor(Math.random()*720);$('wheel').style.transform=`rotate(${rotation}deg)`;setTimeout(()=>{showResults();btn.disabled=false;},900);}
+
+/* Public curated scheduler only: never copy protected private-core algorithms here. */
+let spinCount=0,lastPlanKey='';
+function formatClock(date){return date.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});}
+function allActivities(){return Object.entries(defaults).flatMap(([category,items])=>items.map(([icon,name,duration])=>({category,icon,name,duration}))).concat(custom.slice(0,20).map(x=>({category:x.category,icon:'⭐',name:x.name,duration:20})));}
+function sequencePlan(items){
+ const order={chore:0,outdoor:1,family:2,selfcare:3};
+ return [...items].sort((a,b)=>{
+  const ab=a.name==='Early bedtime routine'?99:order[a.category];
+  const bb=b.name==='Early bedtime routine'?99:order[b.category];
+  return ab-bb;
+ });
+}
+function buildTwoHourPlan(anchor,now){
+ const available=allActivities(),solutions=[],selected=[];
+ const end=new Date(now.getTime()+120*60000),endHour=end.getHours()+end.getMinutes()/60;
+ function search(index,total,hasAnchor){
+  if(total===120){
+   if(hasAnchor&&selected.length>=2&&new Set(selected.map(x=>x.category)).size>=2){
+    const bedtime=selected.some(x=>x.name==='Early bedtime routine');
+    const categories=new Set(selected.map(x=>x.category)).size;
+    const score=categories*8-Math.abs(selected.length-4)*4-
+      (bedtime&&(endHour<18||endHour>23)?24:0)-
+      (selected.filter(x=>x.category==='chore').length>2?8:0);
+    solutions.push({items:[...selected],score,key:selected.map(x=>x.name).sort().join('|')});
+   }
+   return;
+  }
+  if(selected.length===5||total>120)return;
+  for(let i=index;i<available.length;i++){
+   const item=available[i];
+   if(total+item.duration>120)continue;
+   selected.push(item);
+   search(i+1,total+item.duration,hasAnchor||item.category===anchor);
+   selected.pop();
+  }
+ }
+ search(0,0,false);
+ if(!solutions.length)return null;
+ solutions.sort((a,b)=>b.score-a.score||a.key.localeCompare(b.key));
+ const strong=solutions.filter(s=>s.score>=solutions[0].score-4);
+ let pick=strong[(spinCount-1)%strong.length];
+ if(pick.key===lastPlanKey&&strong.length>1)pick=strong[spinCount%strong.length];
+ lastPlanKey=pick.key;
+ return sequencePlan(pick.items);
+}
+function generatePlan(anchor){
+ const now=new Date();now.setSeconds(0,0);
+ const plan=buildTwoHourPlan(anchor,now);
+ if(!plan)return null;
+ let cursor=new Date(now);
+ currentPlan=plan.map(item=>{const start=new Date(cursor);cursor=new Date(cursor.getTime()+item.duration*60000);return {...item,start,end:new Date(cursor)};});
+ return currentPlan;
+}
+function showResults(anchor){
+ const plan=generatePlan(anchor);
+ if(!plan){$('acceptedStatus').textContent='No two-hour combination fits '+labels[anchor]+'. Try another spin.';$('acceptedStatus').classList.add('show');return;}
+ $('resultSubtitle').textContent=currentMember+' choosing · '+formatClock(plan[0].start)+' – '+formatClock(plan[plan.length-1].end)+' · 2-hour plan';
+ $('whyText').textContent='Why this plan: The wheel landed on '+labels[anchor]+'. This schedule includes that category, totals exactly 120 minutes using curated activity estimates, and keeps bedtime last when included. You decide whether to use it. No weather, live availability, or personalized AI is used.';
+ $('planCards').innerHTML=plan.map(x=>'<article class="plan-card"><div class="plan-icon" aria-hidden="true">'+x.icon+'</div><div><div class="plan-name">'+escapeHtml(x.name)+'</div><div class="plan-meta">'+formatClock(x.start)+'–'+formatClock(x.end)+' · '+labels[x.category]+' · '+x.duration+' min</div></div></article>').join('');
+ $('results').classList.add('open');$('acceptBtn').focus();
+}
+function spin(){
+ const btn=$('spinBtn');if(btn.disabled)return;btn.disabled=true;
+ const index=crypto.getRandomValues(new Uint32Array(1))[0]%4;
+ const anchor=['chore','outdoor','family','selfcare'][index];
+ const current=((rotation%360)+360)%360,target=(360-(index*90+45))%360;
+ rotation+=1800+((target-current+360)%360);
+ const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ $('wheel').style.transform='rotate('+rotation+'deg)';
+ spinCount++;
+ setTimeout(()=>{showResults(anchor);btn.disabled=false;},reduced?0:2400);
+}
 function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
 function renderActivities(){const rows=[];Object.entries(defaults).forEach(([category,items])=>items.forEach(([icon,name,duration])=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-icon">${icon}</span><div><div class="activity-name">${escapeHtml(name)}</div><div class="activity-meta">${labels[category]} · ${duration} min · curated</div></div></div></div>`)));custom.forEach(x=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-icon">⭐</span><div><div class="activity-name">${escapeHtml(x.name)}</div><div class="activity-meta">${labels[x.category]} · custom · session only</div></div></div></div>`));$('activityList').innerHTML=rows.join('');}
-function addActivity(e){e.preventDefault();const name=$('activityName').value.trim();const category=$('activityCategory').value;if(!name)return;if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}custom.push({name,category});$('activityName').value='';renderActivities();}
+function addActivity(e){e.preventDefault();const name=$('activityName').value.trim();const category=$('activityCategory').value;if(!name)return;if(custom.length>=20){alert('Session activity limit reached (20).');return;}if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}custom.push({name,category});$('activityName').value='';renderActivities();}
 function switchPage(pageId,button){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
 document.querySelectorAll('.member').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.member').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentMember=btn.dataset.member;$('memberContext').textContent=`${currentMember} is selected. In this prototype, member selection is only used as planning context and does not personalize recommendations.`;}));
 document.querySelectorAll('.nav button').forEach(btn=>btn.addEventListener('click',()=>switchPage(btn.dataset.page,btn)));
