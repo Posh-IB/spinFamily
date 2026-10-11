@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [work/original-app-premium-facelift-2026-10-11]
+    branches: [work/original-app-premium-facelift-2026-10-11, work/cinematic-family-art-2026-10-11]
   workflow_dispatch:
 permissions:
   contents: read
