@@ -150,6 +150,14 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 @media(max-width:360px){.wheel-wrap{width:265px;height:265px}.wheel{width:238px;height:238px}.wheel .rotating-wheel-label{font-size:18px}.wheel .rotating-wheel-label small{font-size:9px}}
 @media(prefers-reduced-motion:reduce){.spin,.wheel,.member{transition:none!important}}
 
+
+/* Illustrated family backdrops are static local assets, not external trackers. */
+.activities-hero{background-image:url('assets/family-crafts.svg');background-size:cover;background-position:center 46%}
+.family-hero{background-image:url('assets/family-boardgame.svg');background-size:cover;background-position:center 48%}
+.guide-hero{background-image:linear-gradient(100deg,#fff8eee8,#fff1e3aa 36%,transparent 80%),url('assets/family-boardgame.svg');background-size:cover;background-position:center 42%}
+.activities-hero::after,.family-hero::after{background:linear-gradient(90deg,#fff8eefa 0%,#fff2e8d6 37%,transparent 77%)}
+#spinPage{background:radial-gradient(ellipse at 70% 54%,#fff2d4 3%,transparent 66%),linear-gradient(125deg,#ffeadc,#ffeede)}
+@media(max-width:760px){.activities-hero,.family-hero,.guide-hero{background-position:center center}.activities-hero::after,.family-hero::after{background:linear-gradient(90deg,#fff8eff5 0%,#fff4e5dc 46%,transparent 100%)}}
   </style>
 </head>
 <body>
