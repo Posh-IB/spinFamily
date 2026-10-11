@@ -1,0 +1,65 @@
+name: SpinFamily actual browser smoke
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [work/original-app-premium-facelift-2026-10-11]
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Browser and responsive smoke
+        run: |
+          python3 -m http.server 4317 --bind 127.0.0.1 > /tmp/spinfamily-server.log 2>&1 &
+          node - <<'NODE'
+          const {chromium}=require('playwright');
+          const fs=require('fs');fs.mkdirSync('qa-screenshots',{recursive:true});
+          (async()=>{
+            const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+            try{
+              for(const width of [390,768,1440]){
+                const page=await browser.newPage({viewport:{width,height:900},reducedMotion:'reduce'});
+                const errors=[];page.on('pageerror',e=>errors.push(e.message));
+                await page.goto('http://127.0.0.1:4317/',{waitUntil:'domcontentloaded'});
+                await page.screenshot({path:'qa-screenshots/home-'+width+'.png',fullPage:true});
+                if(!await page.locator('#spinBtn').isVisible())throw Error('Spin hidden at '+width);
+                await page.locator('#spinBtn').click();
+                await page.locator('#results.open').waitFor({timeout:20000});
+                const meta=await page.locator('#resultSubtitle').innerText();
+                if(!meta.includes('2-hour plan'))throw Error('Missing two-hour summary: '+meta);
+                if(!(await page.locator('.plan-card').count()))throw Error('Missing plan cards');
+                await page.screenshot({path:'qa-screenshots/plan-'+width+'.png',fullPage:true});
+                await page.locator('#closeBtn').click();
+                await page.locator('[data-page="activitiesPage"]').click();
+                if(!await page.locator('#activityList .activity-tile').count())throw Error('Missing activities');
+                await page.screenshot({path:'qa-screenshots/activities-'+width+'.png',fullPage:true});
+                await page.locator('[data-filter="family"]').click();
+                if(!await page.locator('#activityList .activity-tile').count())throw Error('Activity filter blank');
+                await page.locator('[data-page="familyPage"]').click();
+                if(!await page.locator('#familySelection').isVisible())throw Error('Family page hidden');
+                await page.screenshot({path:'qa-screenshots/family-'+width+'.png',fullPage:true});
+                await page.locator('[data-page="guidePage"]').click();
+                await page.screenshot({path:'qa-screenshots/guide-'+width+'.png',fullPage:true});
+                if(errors.length)throw Error('Page errors: '+errors.join('; '));
+                console.log('BROWSER PASS',width,meta);
+                await page.close();
+              }
+            } finally{await browser.close();}
+          })().catch(e=>{console.error(e);process.exit(1);});
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spinfamily-browser-evidence
+          path: qa-screenshots/
