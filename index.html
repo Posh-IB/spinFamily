@@ -158,6 +158,23 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 .activities-hero::after,.family-hero::after{background:linear-gradient(90deg,#fff8eefa 0%,#fff2e8d6 37%,transparent 77%)}
 #spinPage{background:radial-gradient(ellipse at 70% 54%,#fff2d4 3%,transparent 66%),linear-gradient(125deg,#ffeadc,#ffeede)}
 @media(max-width:760px){.activities-hero,.family-hero,.guide-hero{background-position:center center}.activities-hero::after,.family-hero::after{background:linear-gradient(90deg,#fff8eff5 0%,#fff4e5dc 46%,transparent 100%)}}
+
+/* Fix: wheel bezel centered on its true circular footprint, with balanced outer ring.
+   Visual depth goes below, but no lateral shadow shift. */
+.wheel-wrap{filter:none!important;justify-items:center;align-items:center}
+.wheel{margin:0 auto;transform-origin:50% 50%;box-shadow:
+  0 0 0 7px rgba(255,255,255,.91),
+  0 0 0 13px rgba(245,214,184,.66),
+  0 15px 25px rgba(101,59,58,.28)!important}
+.participant-context{display:flex;align-items:center;gap:13px;padding:12px 14px;margin-bottom:17px;border-radius:18px;background:linear-gradient(125deg,#fff3e9,#e9f9f7);border:1px solid #f2ded3;box-shadow:0 5px 17px rgba(94,52,55,.08)}
+.participant-avatar{flex:none;display:grid;place-items:center;width:52px;height:52px;border-radius:17px;background:#fff;color:#15435b;font-size:29px;box-shadow:0 3px 10px #775e5222}
+.participant-copy{flex:1;min-width:0;display:grid;gap:3px}
+.participant-copy strong{font-size:15px;color:#123f53}
+.participant-copy small{font-size:11px;color:#4b6771;line-height:1.4}
+.participant-switch{display:grid;gap:4px;color:#17566a;font-size:11px;font-weight:800}
+.participant-switch select{max-width:110px;padding:8px;border:1px solid #b7d6d3;border-radius:11px;background:white;color:#143f53;font-size:13px}
+.family-options button[aria-pressed="true"]{outline:3px solid #09a2ab;outline-offset:2px;background:#e5f8f5}
+@media(max-width:460px){.participant-context{gap:9px;padding:10px}.participant-avatar{width:42px;height:42px;font-size:24px}.participant-copy strong{font-size:13px}.participant-copy small{font-size:10px}.participant-switch select{max-width:88px;font-size:11px}}
   </style>
 </head>
 <body>
@@ -203,6 +220,13 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
   <main id="activitiesPage" class="page">
     <section class="page-hero activities-hero"><div class="page-heading"><p class="hero-kicker">ACTIVITY LIBRARY</p><h2>Explore Activities</h2><p>Fun ideas for every kind of night.</p></div></section>
     <section class="card">
+      <div class="participant-context" aria-label="Current family participant">
+        <span class="participant-avatar" id="activityParticipantAvatar" aria-hidden="true">👩</span>
+        <div class="participant-copy"><strong id="activityParticipantName">Choosing with Mom</strong><small>Anonymous session · No activity history saved</small></div>
+        <label class="participant-switch"><span>Change</span><select id="activityParticipantSelect" aria-label="Change participant">
+          <option value="Mom">Mom</option><option value="Dad">Dad</option><option value="Emma">Emma</option><option value="Lucas">Lucas</option>
+        </select></label>
+      </div>
       <div class="card-title">Curated + custom activities</div>
       <div class="category-filters" id="activityFilters" aria-label="Filter activities"><button type="button" class="filter-chip active" data-filter="all" aria-pressed="true">All</button><button type="button" class="filter-chip" data-filter="chore" aria-pressed="false">At Home</button><button type="button" class="filter-chip" data-filter="outdoor" aria-pressed="false">Out &amp; About</button><button type="button" class="filter-chip" data-filter="family" aria-pressed="false">Creative</button><button type="button" class="filter-chip" data-filter="selfcare" aria-pressed="false">Relax &amp; Unwind</button></div><div id="activityList" class="activity-grid"></div>
       <form class="add-form" id="activityForm">
@@ -216,7 +240,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 
   <main id="familyPage" class="page">
     <section class="page-hero family-hero"><div class="page-heading"><p class="hero-kicker">TOGETHER IS BETTER</p><h2>Our Family</h2><p>Every family looks different. Every moment matters.</p></div></section>
-    <section class="card family-space"><h3>Who's helping choose tonight?</h3><p>Choose a family role for this session. Profiles and household accounts are not yet available.</p>
+    <section class="card family-space"><h3>Who's helping choose tonight?</h3><p>Choose a family role for this anonymous session. It follows you between Home, Activities and Family, but resets when the app reloads. Paid household profiles and saved activity history are planned, not active.</p>
       <div class="family-options"><button type="button" data-family-member="Mom">👩 <span>Mom</span></button><button type="button" data-family-member="Dad">👨 <span>Dad</span></button><button type="button" data-family-member="Emma">👧 <span>Emma</span></button><button type="button" data-family-member="Lucas">👦 <span>Lucas</span></button></div>
       <p class="family-selection" id="familySelection" role="status">Currently choosing: Mom</p>
     </section>
@@ -228,7 +252,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
   </main>
 
   <main id="aboutPage" class="page about">
-    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Cloud accounts or cross-device sync</li><li>Weather-aware suggestions</li><li>Validated streak or variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
+    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free now · Saved family history later</h3><p>Anonymous spins, session participants, and two-hour activity suggestions are free. Your selections and activities are not stored after this page is refreshed. A paid household subscription is planned for caregiver-managed profiles, saved activity history, favorites, and history-informed variety. Subscription checkout, accounts, and stored history are not active in this public prototype.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Cloud accounts or cross-device sync</li><li>Weather-aware suggestions</li><li>Validated streak or variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
   </main>
 
 
@@ -356,9 +380,33 @@ document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click'
 }));
 function addActivity(e){e.preventDefault();const name=$('activityName').value.trim();const category=$('activityCategory').value;if(!name)return;if(custom.length>=20){alert('Session activity limit reached (20).');return;}if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}custom.push({name,category});$('activityName').value='';renderActivities();}
 function switchPage(pageId,button){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
-document.querySelectorAll('.member').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.member').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentMember=btn.dataset.member;$('memberContext').textContent=`${currentMember} is selected. Member selection is for this session only; recommendations are not personalized by member.`;}));
-document.querySelectorAll('.nav button').forEach(btn=>btn.addEventListener('click',()=>switchPage(btn.dataset.page,btn)));
-document.querySelectorAll('[data-family-member]').forEach(btn=>btn.addEventListener('click',()=>{currentMember=btn.dataset.familyMember;document.querySelectorAll('.member').forEach(b=>b.classList.toggle('active',b.dataset.member===currentMember));$('familySelection').textContent='Currently choosing: '+currentMember;$('memberContext').textContent=currentMember+' is selected for this session. Member recommendations are not personalized.';}));
+// Anonymous participant context belongs to the active page session only.
+// Never store a child or household identifier in localStorage, cookies, or history.
+const participantAvatars={Mom:'👩',Dad:'👨',Emma:'👧',Lucas:'👦'};
+function selectParticipant(member){
+ if(!Object.hasOwn(participantAvatars,member))return;
+ currentMember=member;
+ document.querySelectorAll('.member').forEach(button=>{
+  const active=button.dataset.member===member;
+  button.classList.toggle('active',active);
+  button.setAttribute('aria-pressed',String(active));
+ });
+ document.querySelectorAll('[data-family-member]').forEach(button=>{
+  const active=button.dataset.familyMember===member;
+  button.classList.toggle('active',active);
+  button.setAttribute('aria-pressed',String(active));
+ });
+ $('memberContext').textContent=member+' is selected for this session. Recommendations are not personalized by member.';
+ $('familySelection').textContent='Currently choosing: '+member;
+ $('activityParticipantAvatar').textContent=participantAvatars[member];
+ $('activityParticipantName').textContent='Choosing with '+member;
+ $('activityParticipantSelect').value=member;
+}
+document.querySelectorAll('.member').forEach(button=>button.addEventListener('click',()=>selectParticipant(button.dataset.member)));
+document.querySelectorAll('[data-family-member]').forEach(button=>button.addEventListener('click',()=>selectParticipant(button.dataset.familyMember)));
+$('activityParticipantSelect').addEventListener('change',event=>selectParticipant(event.target.value));
+document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>switchPage(button.dataset.page,button)));
+selectParticipant(currentMember);
 $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',()=>{$('results').classList.remove('open');$('acceptedStatus').textContent='Plan selected for tonight. This prototype does not record completion, streaks, or long-term history yet.';$('acceptedStatus').classList.add('show');});$('activityForm').addEventListener('submit',addActivity);document.addEventListener('keydown',e=>{if(e.key==='Escape')$('results').classList.remove('open');});renderActivities();
 </script>
 </body>
