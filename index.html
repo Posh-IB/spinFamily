@@ -176,17 +176,8 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 .family-options button[aria-pressed="true"]{outline:3px solid #09a2ab;outline-offset:2px;background:#e5f8f5}
 @media(max-width:460px){.participant-context{gap:9px;padding:10px}.participant-avatar{width:42px;height:42px;font-size:24px}.participant-copy strong{font-size:13px}.participant-copy small{font-size:10px}.participant-switch select{max-width:88px;font-size:11px}}
 
-/* Experimental cinematic family atlas. Warm illustrated baseline is unchanged. */
-.activities-hero,.family-hero,.guide-hero{background-repeat:no-repeat}
-.activities-hero{background-image:linear-gradient(90deg,#fff8eefa 0%,#fff3e4d8 34%,transparent 82%),url('assets/cinematic-family-atlas.webp');background-size:cover,300% 100%;background-position:center,0% center}
-.family-hero{background-image:linear-gradient(90deg,#fff8eefa 0%,#fff3e4d8 34%,transparent 82%),url('assets/cinematic-family-atlas.webp');background-size:cover,300% 100%;background-position:center,50% center}
-.guide-hero{background-image:linear-gradient(90deg,#fff8eefa 0%,#fff3e4d8 34%,transparent 82%),url('assets/cinematic-family-atlas.webp');background-size:cover,300% 100%;background-position:center,100% center}
-.activity-art.activity-scene{position:relative;overflow:hidden;background-image:url('assets/cinematic-family-atlas.webp');background-repeat:no-repeat;background-size:300% 100%;background-color:#f8d8c4}
-.activity-scene.scene-home,.activity-scene.scene-creative{background-position:0% 50%}
-.activity-scene.scene-outdoor{background-position:50% 50%}
-.activity-scene.scene-unwind{background-position:100% 50%}
-.activity-scene-icon{position:absolute;right:10px;bottom:10px;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#fff9efdf;color:#16475b;font-size:23px;text-shadow:none;box-shadow:0 3px 10px #51354c30}
-.activity-scene::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 -22px 25px #2d273021}
+/* Preserve the warm illustrated baseline as the background on all internal pages.
+   Cinematic character art is used only within individual Activities cards. */
   </style>
 </head>
 <body>
