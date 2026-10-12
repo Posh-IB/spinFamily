@@ -36,14 +36,170 @@
     .results{position:fixed;inset:0;background:rgba(247,249,252,.98);z-index:50;display:none;overflow-y:auto}.results.open{display:block}.results-inner{max-width:414px;margin:0 auto;padding:28px 16px 36px}.result-head{text-align:center}.result-head h2{font-size:24px}.result-head p{font-size:12px;color:var(--muted);margin-top:5px}.why{background:#EBF8FF;border:1px solid #90CDF4;border-radius:15px;padding:13px;margin:16px 0;color:#2A4365;font-size:12px;line-height:1.5}.plan-card{background:#fff;border-radius:18px;box-shadow:var(--shadow);padding:15px;margin:11px 0;display:flex;gap:12px;align-items:center}.plan-icon{font-size:28px}.plan-name{font-weight:800;font-size:14px}.plan-meta{font-size:11px;color:var(--muted);margin-top:3px}.actions{display:flex;gap:10px;margin-top:16px}.actions button{flex:1;border:0;border-radius:14px;padding:12px;font-weight:800;cursor:pointer}.again{background:#EDF2F7;color:var(--text)}.accept{background:var(--primary);color:#fff}.close{display:block;margin:12px auto 0;border:0;background:transparent;color:#4A5568;text-decoration:underline;cursor:pointer}
     .status{margin:15px;padding:12px 14px;border-radius:14px;background:#F0FFF4;border:1px solid #9AE6B4;color:#22543D;font-size:12px;display:none}.status.show{display:block}
     @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+    /* Premium facelift: preserve the original layout, wheel, category inventory and user flow. */
+    :root{--primary:#f26373;--secondary:#37bdb3;--accent:#ffde73;--background:#fff8f7;--text:#303746;--muted:#626e7e;--border:#f0e2e6;--shadow:0 9px 28px rgba(86,40,67,.10)}
+    body{background:linear-gradient(150deg,#ffe9e6,#fffaf8 48%,#ebfaf7);background-attachment:fixed}
+    .app{background:linear-gradient(#fffaf8,#fffdfb);box-shadow:0 14px 60px rgba(104,55,71,.14)}
+    .header{background:linear-gradient(135deg,#ed5d77 0%,#fc887c 58%,#f3a184 100%);box-shadow:0 7px 22px rgba(213,92,117,.19)}
+    .header h1{letter-spacing:.1px;text-shadow:0 2px 12px #8d365033}
+    .card{border:1px solid #f5e6e6;box-shadow:0 8px 24px #8549650d}
+    .member{transition:transform .16s ease,background .16s ease,border-color .16s ease}
+    .member.active{background:#fff0f2;box-shadow:0 4px 12px #f263731b}
+    .member-icon{background:linear-gradient(145deg,#fff1eb,#e9faf5);box-shadow:inset 0 0 0 1px #ffffff}
+    .wheel-section{padding-top:14px;padding-bottom:22px}
+    .wheel-wrap{filter:drop-shadow(0 8px 16px rgba(119,66,93,.09))}
+    .wheel{box-shadow:0 12px 32px #7e3e5370,0 0 0 6px #ffede9;border-color:#ffffff}
+    .wheel-center{box-shadow:0 5px 17px #6c3b5840;border:3px solid #fff0eb}
+    .pointer{filter:drop-shadow(0 2px 2px #9e405d55)}
+    .spin{min-height:54px;letter-spacing:.06em;background:linear-gradient(120deg,#e44d70,#f9797b);box-shadow:0 8px 20px #e35a7560;transition:transform .16s ease,box-shadow .16s ease}
+    .spin:active{transform:scale(.975)}
+    .results{background:rgba(255,249,247,.985)}
+    .plan-card{border:1px solid #f1e6e7;box-shadow:0 6px 22px #86516612;min-height:68px}
+    .plan-icon{display:grid;place-items:center;width:46px;height:46px;background:#fff1e9;border-radius:14px}
+    .why{background:#eaf8f5;border-color:#86c9bd;color:#20544e}
+    .nav{background:#fffdfcf5;backdrop-filter:blur(12px);box-shadow:0 -4px 16px #70526713}
+    .nav button{min-height:44px;border-radius:12px}
+    .nav button.active{background:#fff0ef;color:#b9445c}
+    @media (hover:hover){.spin:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 11px 25px #e35a7580}.member:hover{transform:translateY(-2px)}}
+    @media (max-width:359px){.wheel-wrap{width:260px;height:260px}.wheel{width:232px;height:232px}.label{font-size:11px}}
+    @media (prefers-reduced-motion:reduce){.member,.spin{transition:none!important}}
+
+    /* Upgrade original wheel mechanics without replacing the familiar layout. */
+    .wheel{background:conic-gradient(from 0deg,#FF9AA2 0 90deg,#C7F0A0 90deg 180deg,#A0C4FF 180deg 270deg,#BDB2FF 270deg 360deg);transition:transform 2.4s cubic-bezier(.12,.7,.12,1)}
+    .seg{display:none}
+    .wheel .rotating-wheel-label{position:absolute;color:#273b48;font-weight:900;font-size:11px;line-height:1.1;text-align:center;text-shadow:0 1px 2px #fff9;z-index:2}
+    .wheel .rw1{top:19%;right:12%}.wheel .rw2{bottom:19%;right:12%}.wheel .rw3{bottom:19%;left:12%}.wheel .rw4{top:19%;left:12%}
+    .wheel-wrap>.label{display:none}
+    .plan-card{align-items:center}
+    .plan-meta{font-size:12px;line-height:1.5}
+    @media(prefers-reduced-motion:reduce){.wheel{transition:none!important}}
+
+/* Founder-approved visual blueprint: polished animated wheel + cozy family scenes; original flow retained */
+:root{--navy:#103d53;--coral:#ff6863;--sea:#08a8b3;--gold:#ffb54c;--purple:#7652c6;--cream:#fff6e9;}
+body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fae0d6);font-family:'Nunito',system-ui,sans-serif}
+.app{max-width:1160px;min-height:100dvh;background:linear-gradient(180deg,#fff9ee 0%,#fffaf4 55%,#fcece6 100%);position:relative;overflow:hidden}
+.header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:19px 26px 16px;border-radius:0 0 24px 24px;background:linear-gradient(105deg,rgba(255,252,245,.98),rgba(255,242,225,.98));color:var(--navy);box-shadow:0 4px 22px #713b3619}
+.logo{position:relative;display:inline-block;font-weight:900;font-size:clamp(27px,3vw,38px);letter-spacing:-.06em;line-height:1.25;font-style:italic;color:#0a536b;text-shadow:0 2px 5px #7f534617}
+.logo em{color:#f65355;font-style:italic}.logo b{color:#ff4e61;font-size:15px;position:absolute;top:-9px;left:54px;transform:rotate(14deg)}
+.header p{color:#446375;font-size:12px;text-align:right;max-width:240px}
+.nav{position:sticky;top:0;left:auto;bottom:auto;transform:none;width:100%;max-width:none;display:flex;align-items:center;justify-content:flex-end;background:#fff9f0ee;padding:3px 20px 10px;gap:7px;z-index:28;border-bottom:1px solid #e8ded6;box-shadow:0 6px 18px #5c34240f}
+.nav button{display:flex;align-items:center;flex-direction:column;gap:2px;min-width:82px;border-radius:14px;font-size:12px;color:var(--navy);min-height:55px}
+.nav button span{font-size:20px;margin:0;line-height:1.2}
+.nav button.active{background:#fff0e8;color:#eb495e;box-shadow:inset 0 -3px 0 #ff6569}
+.prototype-note{max-width:820px;margin:13px auto 0;padding:9px 14px;font-size:11px;line-height:1.45;background:#fffaf0e5;border-color:#ecdcb4}
+#spinPage{position:relative;display:none;grid-template-columns:minmax(260px,.8fr) minmax(380px,1.2fr);gap:0;align-items:center;min-height:560px;margin:0;background:radial-gradient(ellipse at 80% 55%,#fff0d9 5%,transparent 53%),linear-gradient(115deg,#fbe8d9,#ffefdf)}
+#spinPage.active{display:grid}
+.welcome-hero{grid-column:1;grid-row:1;padding:26px 10px 10px 40px;align-self:end}
+.welcome-hero .hero-kicker,.hero-kicker{font-weight:900;color:#dc5163;letter-spacing:.17em;font-size:11px;margin:0 0 11px}
+.welcome-hero h2{font-weight:900;letter-spacing:-.045em;font-size:clamp(38px,5vw,65px);line-height:1.07;max-width:340px;margin:0 0 14px;color:#103d53}
+.welcome-hero em{color:#fd5c60;font-style:normal}
+.welcome-hero p:last-child{max-width:315px;font-size:16px;line-height:1.65;color:#375368}
+#spinPage>.card{grid-column:1;grid-row:2;margin:0 18px 22px 32px;align-self:start;padding:17px;background:#ffffffce;backdrop-filter:blur(9px);border-color:#fff2e8}
+#spinPage .wheel-section{grid-column:2;grid-row:1/span 3;text-align:center;padding:20px 20px 24px;align-self:center}
+#spinTitle{font-size:18px!important;color:#204e61;margin:7px 0 5px!important}
+.wheel-wrap{width:360px;height:360px;max-width:82vw;max-height:82vw;margin:12px auto 20px}
+.wheel{width:330px;height:330px;max-width:75vw;max-height:75vw;border:11px solid #fff;border-radius:50%;background:conic-gradient(from 0deg,#f96862 0 90deg,#06a8b5 90deg 180deg,#ffad3f 180deg 270deg,#7e57c8 270deg 360deg);box-shadow:0 12px 0 #e5ae92,0 21px 37px #90583c65,0 0 0 8px #ffffff8f;transition:transform 2.4s cubic-bezier(.12,.7,.12,1);overflow:hidden}
+.pointer{top:-10px;border-left:21px solid transparent;border-right:21px solid transparent;border-top:35px solid #ff615d;filter:drop-shadow(0 3px 3px #733d4599)}
+.wheel-center{width:72px;height:72px;font-size:34px;font-style:normal;font-weight:900;color:#ff6267;border:6px solid #fff7ef;background:linear-gradient(140deg,#fff,#fff1e9);box-shadow:0 6px 17px #67456c59}
+.wheel .rotating-wheel-label{font-size:27px;font-weight:900;text-shadow:0 3px 6px #0003;color:#fff;display:grid;place-items:center;gap:1px;line-height:1}
+.wheel .rotating-wheel-label small{font-size:13px;line-height:1.15;white-space:nowrap;color:white;font-weight:900}
+.wheel .rw1{top:17%;right:14%;transform:rotate(45deg)}
+.wheel .rw2{bottom:16%;right:11%;transform:rotate(135deg)}
+.wheel .rw3{bottom:17%;left:15%;transform:rotate(225deg)}
+.wheel .rw4{top:16%;left:10%;transform:rotate(-45deg)}
+.spin{font-size:19px;padding:17px 35px;min-width:min(90%,332px);letter-spacing:.02em;border:2px solid #fff9e5;box-shadow:0 9px 0 #d14d55,0 16px 25px #f05d6e60}
+.spin span{margin-right:8px}
+.spin-status{min-height:20px;font-weight:850;color:#147a85;font-size:12px;margin:15px auto 0}
+.small-note{font-size:11px;color:#5b6d71;max-width:375px;margin-top:8px}
+#spinPage>.status{grid-column:1/-1;grid-row:3}
+.page-hero{position:relative;isolation:isolate;min-height:270px;border-radius:0 0 25px 25px;display:flex;align-items:flex-start;overflow:hidden;background:#f7e1d2;padding:28px 33px}
+.page-hero::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#fff9ebf7 0%,#fff4e6dd 34%,transparent 73%)}
+.page-heading{max-width:315px;text-shadow:0 1px 2px #fff5}
+.page-heading h2{font-size:clamp(30px,4vw,47px);line-height:1.1;letter-spacing:-.04em;color:#0d4356;margin:5px 0 7px}
+.page-heading p:not(.hero-kicker){font-size:15px;line-height:1.6;color:#31536c}
+.page>.card{margin:20px 25px;border:1px solid #f3e2d7;border-radius:22px;background:#fffefaec}
+.category-filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
+.filter-chip{padding:9px 14px;background:#fff8f0;border:1px solid #ecd9d3;border-radius:999px;color:#144f66;font-weight:900;font-size:12px;cursor:pointer}
+.filter-chip.active{background:#f85f66;color:#fff;border-color:#eb575d}
+.activity-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:16px}
+.activity-tile{overflow:hidden;border-radius:21px;background:#fff;border:1px solid #f1dfda;box-shadow:0 8px 22px #79475217}
+.activity-art{height:132px;display:grid;place-items:center;font-size:50px;color:#fff;text-shadow:0 4px 6px #51354c50;background:linear-gradient(140deg,#ffb39b,#ff6d6c)}
+.activity-tile.cat-outdoor .activity-art{background:linear-gradient(140deg,#8ce6e0,#0799aa)}
+.activity-tile.cat-family .activity-art{background:linear-gradient(140deg,#ffe7a4,#fca442)}
+.activity-tile.cat-selfcare .activity-art{background:linear-gradient(140deg,#c9aff1,#7657be)}
+.activity-body{padding:12px 14px}
+.activity-name{font-size:15px;font-weight:900;color:#143e53}
+.activity-meta{margin:5px 0 0;font-size:11px;color:#476174}
+.family-space h3{font-size:22px;color:#1b4557}.family-space p{font-size:14px;line-height:1.7}
+.family-options{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0 10px}
+.family-options button{min-height:95px;display:grid;place-items:center;gap:4px;border-radius:18px;border:1px solid #f0ddd4;background:#fff8f1;font-weight:900;font-size:32px}
+.family-options button span{font-size:14px;color:#16475b}
+.family-selection{font-weight:850;color:#147d86}
+.results{background:linear-gradient(125deg,#fff9ee 0%,#fef1e8 100%)}
+.results-inner{max-width:780px}
+.result-head h2{font-size:30px;font-weight:900;color:#123b50}
+.plan-card{min-height:84px;border-radius:17px;box-shadow:0 8px 20px #8b526021}
+.plan-icon{width:57px;height:57px;background:#fff0e9;border-radius:13px;font-size:26px}
+.plan-name{font-size:16px;color:#123b50}
+.plan-meta{font-size:12px}
+.accept{background:linear-gradient(115deg,#1ac2b9,#087f91)}
+.again{background:linear-gradient(115deg,#f96269,#ed5369);color:#fff}
+.close{color:#0e667a}
+@media(max-width:760px){.header{padding:13px 18px}.logo{font-size:29px}.header p{font-size:10px;max-width:160px}.nav{justify-content:center;gap:0;padding:2px 6px 6px}.nav button{min-width:0;flex:1;font-size:10px;min-height:51px}.nav button span{font-size:18px}#spinPage.active{display:block;min-height:unset}.welcome-hero{padding:23px 23px 0;text-align:center}.welcome-hero h2{font-size:35px;max-width:none}.welcome-hero p:last-child{margin:auto;font-size:13px}#spinPage>.card{margin:14px 17px 6px;padding:12px 15px}#spinPage .wheel-section{padding:10px 12px 25px}.wheel-wrap{width:295px;height:295px}.wheel{width:268px;height:268px;border-width:8px}.wheel .rotating-wheel-label{font-size:23px}.wheel .rotating-wheel-label small{font-size:11px}.wheel-center{width:58px;height:58px;font-size:24px}.page-hero{min-height:240px;padding:25px 20px}.page-heading{max-width:215px}.page-heading h2{font-size:30px}.page>.card{margin:12px}.family-options{grid-template-columns:repeat(2,1fr)}.activity-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.activity-art{height:105px}.activity-name{font-size:12px}.activity-body{padding:10px}.category-filters{gap:5px}.filter-chip{padding:8px 10px;font-size:11px}}
+@media(max-width:360px){.wheel-wrap{width:265px;height:265px}.wheel{width:238px;height:238px}.wheel .rotating-wheel-label{font-size:18px}.wheel .rotating-wheel-label small{font-size:9px}}
+@media(prefers-reduced-motion:reduce){.spin,.wheel,.member{transition:none!important}}
+
+
+/* Illustrated family backdrops are static local assets, not external trackers. */
+.activities-hero{background-image:url('assets/family-crafts.svg');background-size:cover;background-position:center 46%}
+.family-hero{background-image:url('assets/family-boardgame.svg');background-size:cover;background-position:center 48%}
+.guide-hero{background-image:linear-gradient(100deg,#fff8eee8,#fff1e3aa 36%,transparent 80%),url('assets/family-boardgame.svg');background-size:cover;background-position:center 42%}
+.activities-hero::after,.family-hero::after{background:linear-gradient(90deg,#fff8eefa 0%,#fff2e8d6 37%,transparent 77%)}
+#spinPage{background:radial-gradient(ellipse at 70% 54%,#fff2d4 3%,transparent 66%),linear-gradient(125deg,#ffeadc,#ffeede)}
+@media(max-width:760px){.activities-hero,.family-hero,.guide-hero{background-position:center center}.activities-hero::after,.family-hero::after{background:linear-gradient(90deg,#fff8eff5 0%,#fff4e5dc 46%,transparent 100%)}}
+
+/* Fix: wheel bezel centered on its true circular footprint, with balanced outer ring.
+   Visual depth goes below, but no lateral shadow shift. */
+.wheel-wrap{filter:none!important;justify-items:center;align-items:center}
+.wheel{margin:0 auto;transform-origin:50% 50%;box-shadow:
+  0 0 0 7px rgba(255,255,255,.91),
+  0 0 0 13px rgba(245,214,184,.66),
+  0 15px 25px rgba(101,59,58,.28)!important}
+.participant-context{display:flex;align-items:center;gap:13px;padding:12px 14px;margin-bottom:17px;border-radius:18px;background:linear-gradient(125deg,#fff3e9,#e9f9f7);border:1px solid #f2ded3;box-shadow:0 5px 17px rgba(94,52,55,.08)}
+.participant-avatar{flex:none;display:grid;place-items:center;width:52px;height:52px;border-radius:17px;background:#fff;color:#15435b;font-size:29px;box-shadow:0 3px 10px #775e5222}
+.participant-copy{flex:1;min-width:0;display:grid;gap:3px}
+.participant-copy strong{font-size:15px;color:#123f53}
+.participant-copy small{font-size:11px;color:#4b6771;line-height:1.4}
+.participant-switch{display:grid;gap:4px;color:#17566a;font-size:11px;font-weight:800}
+.participant-switch select{max-width:110px;padding:8px;border:1px solid #b7d6d3;border-radius:11px;background:white;color:#143f53;font-size:13px}
+.family-options button[aria-pressed="true"]{outline:3px solid #09a2ab;outline-offset:2px;background:#e5f8f5}
+@media(max-width:460px){.participant-context{gap:9px;padding:10px}.participant-avatar{width:42px;height:42px;font-size:24px}.participant-copy strong{font-size:13px}.participant-copy small{font-size:10px}.participant-switch select{max-width:88px;font-size:11px}}
+
+/* Preserve the warm illustrated baseline as the background on all internal pages.
+   Cinematic character art is used only within individual Activities cards. */
+
+
+.activity-tile .activity-art.activity-photo{position:relative;overflow:hidden;padding:0!important;background:#f8e5d5!important;aspect-ratio:69/56;height:auto!important}
+.activity-tile .activity-art.activity-photo img{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;max-width:none}
+.activity-photo .art-fallback{display:none;position:absolute;inset:0;place-items:center;font-size:48px;color:#103d53;background:linear-gradient(135deg,#fff1e5,#eaf8f5)}
+.activity-photo.image-unavailable .art-fallback{display:grid}
+.activity-photo img[hidden]{display:none}
   </style>
 </head>
 <body>
 <div class="app">
-  <header class="header"><h1>SpinFamily</h1><p>A playful family evening planner for getting past “what should we do tonight?”</p></header>
-  <div class="prototype-note"><strong>Public prototype:</strong> plans are created from curated categories and random selection. This version does not use machine learning, cloud sync, weather data, or personalized recommendation models.</div>
+  <header class="header"><div class="logo" aria-label="SpinFamily"><span>Spin</span><em>Family</em><b aria-hidden="true">♥</b></div><p>Fun activities. Stronger connections. Happier families.</p></header>
+  <nav class="nav" aria-label="Primary navigation">
+    <button class="active" data-page="spinPage"><span>⌂</span>Home</button>
+    <button data-page="activitiesPage"><span>☆</span>Activities</button>
+    <button data-page="familyPage"><span>♟</span>Family</button><button data-page="guidePage"><span>?</span>Guide</button>
+    <button data-page="aboutPage"><span>☰</span>More</button>
+  </nav>
+  <div class="prototype-note"><strong>Public prototype:</strong> the wheel selects a category; available curated activities are arranged into a two-hour schedule using estimated durations. This version does not use machine learning, cloud sync, weather data, or personalized recommendation models.</div>
 
   <main id="spinPage" class="page active">
+    <section class="welcome-hero"><p class="hero-kicker">WELCOME TO SPINFAMILY</p><h2>Make Tonight <em>Together</em> Matter</h2><p>One spin. A little less deciding. A lot more being together.</p></section>
     <section class="card" aria-labelledby="familyTitle">
       <div class="card-title" id="familyTitle">Who is helping choose?</div>
       <div class="members" id="members">
@@ -52,29 +208,37 @@
         <button class="member" data-member="Emma"><span class="member-icon">👧</span><span class="member-name">Emma</span></button>
         <button class="member" data-member="Lucas"><span class="member-icon">👦</span><span class="member-name">Lucas</span></button>
       </div>
-      <p class="member-context" id="memberContext">Mom is selected. In this prototype, member selection is only used as planning context and does not personalize recommendations.</p>
+      <p class="member-context" id="memberContext">Mom is selected. Member selection is for this session only; recommendations are not personalized by member.</p>
     </section>
 
     <section class="wheel-section" aria-labelledby="spinTitle">
-      <h2 id="spinTitle" style="font-size:18px;margin-top:8px">Spin an evening plan</h2>
+      <h2 id="spinTitle">Spin your next two hours</h2>
       <div class="wheel-wrap" aria-hidden="true">
         <div class="pointer"></div>
         <div class="wheel" id="wheel">
           <div class="seg s1"></div><div class="seg s2"></div><div class="seg s3"></div><div class="seg s4"></div>
-          <div class="wheel-center">✨</div>
+          <div class="wheel-center">♥</div><span class="rotating-wheel-label rw1">⌂<small>At Home</small></span><span class="rotating-wheel-label rw2">♣<small>Out &amp; About</small></span><span class="rotating-wheel-label rw3">✿<small>Creative</small></span><span class="rotating-wheel-label rw4">☾<small>Relax &amp;<br>Unwind</small></span>
         </div>
-        <div class="label l1">CHORES</div><div class="label l2">OUTDOOR</div><div class="label l3">FAMILY</div><div class="label l4">SELF CARE</div>
+        
       </div>
-      <button class="spin" id="spinBtn">SPIN TONIGHT</button>
-      <p class="small-note">Current planner behavior: select three distinct categories, randomly select one activity from each, then arrange the result within simple sequencing rules. Early bedtime is always last. Planner Engine v2 will expand this logic in a later gate.</p>
+      <button class="spin" id="spinBtn"><span aria-hidden="true">◉</span> SPIN TONIGHT</button><p class="spin-status" id="spinStatus" role="status" aria-live="polite"></p>
+      <p class="small-note">Spin to choose your starting category. SpinFamily builds a two-hour plan from the current time, with bedtime last when included. Activity times are estimates; you choose whether to use the plan.</p>
     </section>
     <div id="acceptedStatus" class="status" role="status"></div>
   </main>
 
   <main id="activitiesPage" class="page">
+    <section class="page-hero activities-hero"><div class="page-heading"><p class="hero-kicker">ACTIVITY LIBRARY</p><h2>Explore Activities</h2><p>Fun ideas for every kind of night.</p></div></section>
     <section class="card">
+      <div class="participant-context" aria-label="Current family participant">
+        <span class="participant-avatar" id="activityParticipantAvatar" aria-hidden="true">👩</span>
+        <div class="participant-copy"><strong id="activityParticipantName">Choosing with Mom</strong><small>Anonymous session · No activity history saved</small></div>
+        <label class="participant-switch"><span>Change</span><select id="activityParticipantSelect" aria-label="Change participant">
+          <option value="Mom">Mom</option><option value="Dad">Dad</option><option value="Emma">Emma</option><option value="Lucas">Lucas</option>
+        </select></label>
+      </div>
       <div class="card-title">Curated + custom activities</div>
-      <div id="activityList"></div>
+      <div class="category-filters" id="activityFilters" aria-label="Filter activities"><button type="button" class="filter-chip active" data-filter="all" aria-pressed="true">All</button><button type="button" class="filter-chip" data-filter="chore" aria-pressed="false">At Home</button><button type="button" class="filter-chip" data-filter="outdoor" aria-pressed="false">Out &amp; About</button><button type="button" class="filter-chip" data-filter="family" aria-pressed="false">Creative</button><button type="button" class="filter-chip" data-filter="selfcare" aria-pressed="false">Relax &amp; Unwind</button></div><div id="activityList" class="activity-grid"></div>
       <form class="add-form" id="activityForm">
         <input id="activityName" maxlength="60" placeholder="Add a family-friendly activity" required aria-label="Activity name">
         <select id="activityCategory" aria-label="Activity category"><option value="chore">Chores</option><option value="outdoor">Outdoor</option><option value="family">Family</option><option value="selfcare">Self Care</option></select>
@@ -84,20 +248,24 @@
     </section>
   </main>
 
+  <main id="familyPage" class="page">
+    <section class="page-hero family-hero"><div class="page-heading"><p class="hero-kicker">TOGETHER IS BETTER</p><h2>Our Family</h2><p>Every family looks different. Every moment matters.</p></div></section>
+    <section class="card family-space"><h3>Who's helping choose tonight?</h3><p>Choose a family role for this anonymous session. It follows you between Home, Activities and Family, but resets when the app reloads. Paid household profiles and saved activity history are planned, not active.</p>
+      <div class="family-options"><button type="button" data-family-member="Mom">👩 <span>Mom</span></button><button type="button" data-family-member="Dad">👨 <span>Dad</span></button><button type="button" data-family-member="Emma">👧 <span>Emma</span></button><button type="button" data-family-member="Lucas">👦 <span>Lucas</span></button></div>
+      <p class="family-selection" id="familySelection" role="status">Currently choosing: Mom</p>
+    </section>
+  </main>
+
   <main id="guidePage" class="page guide">
-    <section class="card"><h2>Quick Start</h2><ol><li>Choose the family member helping with the decision.</li><li>Spin the wheel.</li><li>Review the three selected activities in their suggested order.</li><li>Spin again if the plan does not fit tonight.</li><li>Add a custom activity from the Activities tab if needed.</li></ol><h3>What the prototype does</h3><p>SpinFamily currently combines curated activity lists with random selection and a small set of sequencing rules. Chores are placed before leisure/wind-down when present, self-care is placed toward the end, and Early bedtime routine is always the final activity. The recommendation engine is not yet context-aware.</p><h3>What comes next</h3><p>Planner Engine v2 will add time constraints, household context, activity metadata, repetition controls, richer sequencing constraints, and explainable scoring before any machine-learning layer is considered.</p></section>
+    <section class="page-hero guide-hero"><div class="page-heading"><p class="hero-kicker">THE SPINFAMILY WAY</p><h2>Ideas for Every Family</h2><p>Simple tips, fresh ideas and support for making tonight special.</p></div></section>
+    <section class="card"><h2>Quick Start</h2><ol><li>Choose the family member helping with the decision.</li><li>Spin the wheel.</li><li>Review the timed activities in your suggested two-hour plan.</li><li>Spin again if the plan does not fit tonight.</li><li>Add a custom activity from the Activities tab if needed.</li></ol><h3>What the prototype does</h3><p>SpinFamily uses the wheel's landed category and curated activity estimates to create a two-hour plan starting at the current device time. Chores lead into other activities, with bedtime last when included. The app does not check your real calendar or learn private household preferences.</p><h3>What comes next</h3><p>Future work may add validated fixed-event constraints, caregiver-controlled routines, history, and private household preferences without changing the familiar wheel.</p></section>
   </main>
 
   <main id="aboutPage" class="page about">
-    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Random three-category evening plans with simple logical sequencing</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Cloud accounts or cross-device sync</li><li>Weather-aware suggestions</li><li>Validated streak or variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
+    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free now · Saved family history later</h3><p>Anonymous spins, session participants, and two-hour activity suggestions are free. Your selections and activities are not stored after this page is refreshed. A paid household subscription is planned for caregiver-managed profiles, saved activity history, favorites, and history-informed variety. Subscription checkout, accounts, and stored history are not active in this public prototype.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Cloud accounts or cross-device sync</li><li>Weather-aware suggestions</li><li>Validated streak or variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
   </main>
 
-  <nav class="nav" aria-label="Primary navigation">
-    <button class="active" data-page="spinPage"><span>🎡</span>Spin</button>
-    <button data-page="activitiesPage"><span>🧩</span>Activities</button>
-    <button data-page="guidePage"><span>📖</span>Guide</button>
-    <button data-page="aboutPage"><span>ℹ️</span>About</button>
-  </nav>
+
 </div>
 
 <section class="results" id="results" aria-modal="true" role="dialog" aria-labelledby="resultTitle">
@@ -106,12 +274,12 @@
 
 <script>
 const defaults={
-  chore:[['🧹','Clean the kitchen',20],['🧺','Fold a laundry load',15],['🧸','Organize toys',20],['✨','Wipe counters',10],['🧽','Quick room reset',15]],
+  chore:[['🧹','Clean the kitchen',20],['🧺','Fold a laundry load',15],['🧸','Organize toys',20],['✨','Wipe counters',10],['🧽','Quick room reset',15],['🍳','Cook together',40]],
   outdoor:[['🚶','Take a family walk',30],['🌳','Visit the park',45],['🌱','Tend the garden',30],['🚲','Family bike ride',40],['🌙','Go stargazing',20]],
-  family:[['🎲','Play a board game',45],['🍳','Cook together',40],['📚','Read a story together',25],['🎬','Family movie night',90],['🎨','Arts and crafts',35]],
-  selfcare:[['📖','Quiet reading',30],['🧘','Family breathing break',15],['🛁','Wind-down bath',30],['😴','Early bedtime routine',45],['✍️','Journal or draw',20]]
+  family:[['🎲','Play a board game',45],['📚','Read a story together',25],['🎨','Arts and crafts',35],['✍️','Journal or draw',20]],
+  selfcare:[['📖','Quiet reading',30],['🧘','Family breathing break',15],['🛁','Wind-down bath',30],['😴','Early bedtime routine',45],['🎬','Family movie night',90]]
 };
-const labels={chore:'Chores',outdoor:'Outdoor',family:'Family',selfcare:'Self Care'};
+const labels={chore:'At Home',outdoor:'Out & About',family:'Creative',selfcare:'Relax & Unwind'};
 let custom=[];let currentMember='Mom';let currentPlan=[];let rotation=0;
 const prohibited=[/\bfuck\b/i,/\bshit\b/i,/\bbitch\b/i,/\bcocaine\b/i,/\bheroin\b/i,/\bmeth\b/i,/\bporn\b/i];
 const $=id=>document.getElementById(id);
@@ -125,15 +293,157 @@ function sequencePlan(items){
   const middle=randomized.filter(item=>item.category!=='chore'&&item.category!=='selfcare'&&item.name!=='Early bedtime routine');
   return [...shuffle(chores),...shuffle(middle),...shuffle(windDown),...bedtime];
 }
-function generatePlan(){const categories=shuffle(['chore','outdoor','family','selfcare']).slice(0,3);const selected=categories.map(category=>{const pool=[...defaults[category],...custom.filter(x=>x.category===category).map(x=>['⭐',x.name,20])];const [icon,name,duration]=pick(pool);return{category,icon,name,duration};});currentPlan=sequencePlan(selected);return currentPlan;}
-function showResults(){const plan=generatePlan();$('resultSubtitle').textContent=`Planning context: ${currentMember}`;$('whyText').innerHTML=`<strong>Why this plan:</strong> this prototype selected three different categories (${plan.map(x=>labels[x.category]).join(', ')}), randomly chose one activity from each, then applied simple sequencing rules so setup comes before wind-down and Early bedtime routine is always last. No personal history, weather, or machine-learning model was used.`;$('planCards').innerHTML=plan.map(x=>`<article class="plan-card"><div class="plan-icon">${x.icon}</div><div><div class="plan-name">${escapeHtml(x.name)}</div><div class="plan-meta">${labels[x.category]} · about ${x.duration} min</div></div></article>`).join('');$('results').classList.add('open');$('acceptBtn').focus();}
-function spin(){const btn=$('spinBtn');btn.disabled=true;rotation+=1440+Math.floor(Math.random()*720);$('wheel').style.transform=`rotate(${rotation}deg)`;setTimeout(()=>{showResults();btn.disabled=false;},900);}
+
+/* Public curated scheduler only: never copy protected private-core algorithms here. */
+let spinCount=0,lastPlanKey='';
+function formatClock(date){return date.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});}
+function allActivities(){return Object.entries(defaults).flatMap(([category,items])=>items.map(([icon,name,duration])=>({category,icon,name,duration}))).concat(custom.slice(0,20).map(x=>({category:x.category,icon:'⭐',name:x.name,duration:20})));}
+function sequencePlan(items){
+ const order={chore:0,outdoor:1,family:2,selfcare:3};
+ return [...items].sort((a,b)=>{
+  const ab=a.name==='Early bedtime routine'?99:order[a.category];
+  const bb=b.name==='Early bedtime routine'?99:order[b.category];
+  return ab-bb;
+ });
+}
+function buildTwoHourPlan(anchor,now){
+ const available=allActivities(),solutions=[],selected=[];
+ const end=new Date(now.getTime()+120*60000),endHour=end.getHours()+end.getMinutes()/60;
+ function search(index,total,hasAnchor){
+  if(total===120){
+   if(hasAnchor&&selected.length>=2&&new Set(selected.map(x=>x.category)).size>=2){
+    const bedtime=selected.some(x=>x.name==='Early bedtime routine');
+    const categories=new Set(selected.map(x=>x.category)).size;
+    const score=categories*8-Math.abs(selected.length-4)*4-
+      (bedtime&&(endHour<18||endHour>23)?24:0)-
+      (selected.filter(x=>x.category==='chore').length>2?8:0);
+    solutions.push({items:[...selected],score,key:selected.map(x=>x.name).sort().join('|')});
+   }
+   return;
+  }
+  if(selected.length===5||total>120)return;
+  for(let i=index;i<available.length;i++){
+   const item=available[i];
+   if(total+item.duration>120)continue;
+   selected.push(item);
+   search(i+1,total+item.duration,hasAnchor||item.category===anchor);
+   selected.pop();
+  }
+ }
+ search(0,0,false);
+ if(!solutions.length)return null;
+ solutions.sort((a,b)=>b.score-a.score||a.key.localeCompare(b.key));
+ const strong=solutions.filter(s=>s.score>=solutions[0].score-4);
+ let pick=strong[(spinCount-1)%strong.length];
+ if(pick.key===lastPlanKey&&strong.length>1)pick=strong[spinCount%strong.length];
+ lastPlanKey=pick.key;
+ return sequencePlan(pick.items);
+}
+function generatePlan(anchor){
+ const now=new Date();now.setSeconds(0,0);
+ const plan=buildTwoHourPlan(anchor,now);
+ if(!plan)return null;
+ let cursor=new Date(now);
+ currentPlan=plan.map(item=>{const start=new Date(cursor);cursor=new Date(cursor.getTime()+item.duration*60000);return {...item,start,end:new Date(cursor)};});
+ return currentPlan;
+}
+function showResults(anchor){
+ const plan=generatePlan(anchor);
+ if(!plan){$('acceptedStatus').textContent='No two-hour combination fits '+labels[anchor]+'. Try another spin.';$('acceptedStatus').classList.add('show');return;}
+ $('resultSubtitle').textContent=currentMember+' choosing · '+formatClock(plan[0].start)+' – '+formatClock(plan[plan.length-1].end)+' · 2-hour plan';
+ $('whyText').textContent='Why this plan: The wheel landed on '+labels[anchor]+'. This schedule includes that category, totals exactly 120 minutes using curated activity estimates, and keeps bedtime last when included. You decide whether to use it. No weather, live availability, or personalized AI is used.';
+ $('planCards').innerHTML=plan.map(x=>'<article class="plan-card"><div class="plan-icon" aria-hidden="true">'+x.icon+'</div><div><div class="plan-name">'+escapeHtml(x.name)+'</div><div class="plan-meta">'+formatClock(x.start)+'–'+formatClock(x.end)+' · '+labels[x.category]+' · '+x.duration+' min</div></div></article>').join('');
+ $('results').classList.add('open');$('acceptBtn').focus();
+}
+function spin(){
+ const btn=$('spinBtn');if(btn.disabled)return;btn.disabled=true;
+ const index=crypto.getRandomValues(new Uint32Array(1))[0]%4;
+ const anchor=['chore','outdoor','family','selfcare'][index];
+ const current=((rotation%360)+360)%360,target=(360-(index*90+45))%360;
+ rotation+=1800+((target-current+360)%360);
+ const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ $('wheel').style.transform='rotate('+rotation+'deg)';
+ $('spinStatus').textContent='Spinning up a little family fun…';
+ spinCount++;
+ setTimeout(()=>{showResults(anchor);btn.disabled=false;$('spinStatus').textContent='The wheel chose '+labels[anchor]+'.';},reduced?0:2400);
+}
 function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
-function renderActivities(){const rows=[];Object.entries(defaults).forEach(([category,items])=>items.forEach(([icon,name,duration])=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-icon">${icon}</span><div><div class="activity-name">${escapeHtml(name)}</div><div class="activity-meta">${labels[category]} · ${duration} min · curated</div></div></div></div>`)));custom.forEach(x=>rows.push(`<div class="activity-row"><div class="activity-main"><span class="activity-icon">⭐</span><div><div class="activity-name">${escapeHtml(x.name)}</div><div class="activity-meta">${labels[x.category]} · custom · session only</div></div></div></div>`));$('activityList').innerHTML=rows.join('');}
-function addActivity(e){e.preventDefault();const name=$('activityName').value.trim();const category=$('activityCategory').value;if(!name)return;if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}custom.push({name,category});$('activityName').value='';renderActivities();}
+
+let activityFilter='all';
+const activityArtwork={"clean the kitchen":"assets/activities/clean-the-kitchen.webp","fold a laundry load":"assets/activities/fold-a-laundry-load.webp","organize toys":"assets/activities/organize-toys.webp","wipe counters":"assets/activities/wipe-counters.webp","quick room reset":"assets/activities/quick-room-reset.webp","cook together":"assets/activities/cook-together.webp","read a story together":"assets/activities/read-a-story-together.webp","arts and crafts":"assets/activities/arts-and-crafts.webp","journal or draw":"assets/activities/journal-or-draw.webp","quiet reading":"assets/activities/quiet-reading.webp","family breathing break":"assets/activities/family-breathing-break.webp","wind down bath":"assets/activities/wind-down-bath.webp","take a family walk":"assets/activities/take-a-family-walk.webp","visit the park":"assets/activities/visit-the-park.webp","tend the garden":"assets/activities/tend-the-garden.webp","family bike ride":"assets/activities/family-bike-ride.webp","go stargazing":"assets/activities/go-stargazing.webp","play a board game":"assets/activities/play-a-board-game.webp","dance party":"assets/activities/dance-party.webp","family movie night":"assets/activities/family-movie-night.webp"};
+const categoryArtwork={
+ chore:'assets/activities/clean-the-kitchen.webp',
+ outdoor:'assets/activities/take-a-family-walk.webp',
+ family:'assets/activities/arts-and-crafts.webp',
+ selfcare:'assets/activities/quiet-reading.webp'
+};
+// Normalize known display variants without changing the activity catalog.
+const artworkAliases={'early bedtime routine':'quiet reading','wind-down bath':'wind down bath'};
+const cardArt=(name,category)=>{
+ const key=String(name).toLocaleLowerCase('en-US').replaceAll('-',' ').trim();
+ const resolved=artworkAliases[key]||key;
+ const known=Object.hasOwn(activityArtwork,resolved);
+ const fallback=Object.hasOwn(categoryArtwork,category)?categoryArtwork[category]:categoryArtwork.family;
+ const source=known?activityArtwork[resolved]:fallback;
+ const description='Representative '+(labels[category]||'family activity')+' illustration';
+ const alt=known?'Illustration for '+name:description;
+ return '<div class="activity-art activity-photo"><img loading="lazy" decoding="async" src="'+source+'" data-art-fallback="'+fallback+'" alt="'+escapeHtml(alt)+'" width="552" height="448"><span class="art-fallback" role="img" aria-label="'+escapeHtml(description)+'">'+({chore:'⌂',outdoor:'♣',family:'✿',selfcare:'☾'}[category]||'✿')+'</span></div>';
+};
+// Asset errors cannot produce an infinite retry or a broken-image placeholder.
+document.addEventListener('error',event=>{
+ const image=event.target;
+ if(!(image instanceof HTMLImageElement)||!image.matches('.activity-photo img'))return;
+ const fallback=image.dataset.artFallback;
+ if(image.getAttribute('src')!==fallback){image.src=fallback;image.alt='Representative category illustration';}
+ else{image.hidden=true;image.parentElement.classList.add('image-unavailable');}
+},true);
+function renderActivities(){
+ const icons={chore:'⌂',outdoor:'♣',family:'✿',selfcare:'☾'};
+ const rows=[];
+ Object.entries(defaults).forEach(([category,items])=>items.forEach(([icon,name,duration])=>{
+  if(activityFilter!=='all'&&category!==activityFilter)return;
+  rows.push('<article class="activity-tile cat-'+category+'">'+cardArt(name,category)+'<div class="activity-body"><div class="activity-name">'+icon+' '+escapeHtml(name)+'</div><div class="activity-meta">'+labels[category]+' · '+duration+' min · curated</div></div></article>');
+ }));
+ custom.forEach(x=>{
+  if(activityFilter!=='all'&&x.category!==activityFilter)return;
+  rows.push('<article class="activity-tile cat-'+x.category+'">'+cardArt(x.name,x.category)+'<div class="activity-body"><div class="activity-name">⭐ '+escapeHtml(x.name)+'</div><div class="activity-meta">'+labels[x.category]+' · custom · 20 min</div></div></article>');
+ });
+ $('activityList').innerHTML=rows.join('');
+}
+document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{
+ activityFilter=b.dataset.filter;
+ document.querySelectorAll('[data-filter]').forEach(t=>{const active=t===b;t.classList.toggle('active',active);t.setAttribute('aria-pressed',String(active));});
+ renderActivities();
+}));
+function addActivity(e){e.preventDefault();const name=$('activityName').value.trim();const category=$('activityCategory').value;if(!name)return;if(custom.length>=20){alert('Session activity limit reached (20).');return;}if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}custom.push({name,category});$('activityName').value='';renderActivities();}
 function switchPage(pageId,button){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
-document.querySelectorAll('.member').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.member').forEach(b=>b.classList.remove('active'));btn.classList.add('active');currentMember=btn.dataset.member;$('memberContext').textContent=`${currentMember} is selected. In this prototype, member selection is only used as planning context and does not personalize recommendations.`;}));
-document.querySelectorAll('.nav button').forEach(btn=>btn.addEventListener('click',()=>switchPage(btn.dataset.page,btn)));
+// Anonymous participant context belongs to the active page session only.
+// Never store a child or household identifier in localStorage, cookies, or history.
+const participantAvatars={Mom:'👩',Dad:'👨',Emma:'👧',Lucas:'👦'};
+function selectParticipant(member){
+ if(!Object.hasOwn(participantAvatars,member))return;
+ currentMember=member;
+ document.querySelectorAll('.member').forEach(button=>{
+  const active=button.dataset.member===member;
+  button.classList.toggle('active',active);
+  button.setAttribute('aria-pressed',String(active));
+ });
+ document.querySelectorAll('[data-family-member]').forEach(button=>{
+  const active=button.dataset.familyMember===member;
+  button.classList.toggle('active',active);
+  button.setAttribute('aria-pressed',String(active));
+ });
+ $('memberContext').textContent=member+' is selected for this session. Recommendations are not personalized by member.';
+ $('familySelection').textContent='Currently choosing: '+member;
+ $('activityParticipantAvatar').textContent=participantAvatars[member];
+ $('activityParticipantName').textContent='Choosing with '+member;
+ $('activityParticipantSelect').value=member;
+}
+document.querySelectorAll('.member').forEach(button=>button.addEventListener('click',()=>selectParticipant(button.dataset.member)));
+document.querySelectorAll('[data-family-member]').forEach(button=>button.addEventListener('click',()=>selectParticipant(button.dataset.familyMember)));
+$('activityParticipantSelect').addEventListener('change',event=>selectParticipant(event.target.value));
+document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>switchPage(button.dataset.page,button)));
+selectParticipant(currentMember);
 $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',()=>{$('results').classList.remove('open');$('acceptedStatus').textContent='Plan selected for tonight. This prototype does not record completion, streaks, or long-term history yet.';$('acceptedStatus').classList.add('show');});$('activityForm').addEventListener('submit',addActivity);document.addEventListener('keydown',e=>{if(e.key==='Escape')$('results').classList.remove('open');});renderActivities();
 </script>
 </body>

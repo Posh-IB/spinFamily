@@ -1,0 +1,32 @@
+name: SpinFamily demo QA
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [work/original-app-premium-facelift-2026-10-11, work/cinematic-family-art-2026-10-11]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-and-timing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run SpinFamily node regressions
+        run: node --test tests/*.test.cjs
+      - name: Validate HTML scripts
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'),vm=require('vm'),s=fs.readFileSync('index.html','utf8');
+          const scripts=[...s.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
+          if(!scripts.length)throw Error('No inline script');
+          scripts.forEach(([_,source],i)=>new vm.Script(source,{filename:'index.html script '+i}));
+          for(const item of ['assets/family-crafts.svg','assets/family-boardgame.svg']){
+            if(!fs.existsSync(item))throw Error('Missing asset '+item);
+          }
+          console.log('JS syntax and family illustration assets: OK');
+          NODE
