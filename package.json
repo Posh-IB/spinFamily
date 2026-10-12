@@ -1,0 +1,12 @@
+{
+  "name": "spinfamily-web",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "test:boundary": "node --test tests/activity-moderation.test.cjs tests/household-boundary.test.cjs"
+  },
+  "dependencies": {
+    "@netlify/database": "latest",
+    "@netlify/identity": "latest"
+  }
+}
