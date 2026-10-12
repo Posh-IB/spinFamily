@@ -60,6 +60,36 @@ jobs:
           NODE
       - name: Validate participant continuity, wheel centering and anonymous state
         run: node tests/browser-participant-wheel.cjs
+      - name: Verify all curated cards and custom fallback artwork
+        run: |
+          node - <<'NODE'
+          const {chromium}=require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+            try{
+              for(const width of [390,1440]){
+                const page=await browser.newPage({viewport:{width,height:900}});
+                await page.goto('http://127.0.0.1:4317/',{waitUntil:'domcontentloaded'});
+                await page.locator('[data-page="activitiesPage"]').click();
+                const cards=page.locator('#activityList .activity-tile');
+                if(await cards.count()!==20)throw Error('Expected 20 curated cards');
+                const arts=page.locator('#activityList .activity-photo');
+                if(await arts.count()!==20)throw Error('Not all curated cards illustrated');
+                const images=await arts.evaluateAll(nodes=>nodes.map(n=>({background:getComputedStyle(n).backgroundImage,position:n.style.backgroundPosition})));
+                if(images.some(x=>!x.background.includes('cinematic-family-atlas.webp')||!x.position))throw Error('Missing card artwork mapping');
+                await page.screenshot({path:'qa-screenshots/activity-art-all-'+width+'.png',fullPage:true});
+                await page.locator('#activityName').fill('Family origami challenge');
+                await page.locator('#activityCategory').selectOption('family');
+                await page.locator('#addActivityBtn').click();
+                const custom=page.locator('#activityList .activity-tile').last();
+                if(!await custom.locator('.activity-photo').count())throw Error('Custom fallback missing');
+                await page.screenshot({path:'qa-screenshots/activity-art-custom-'+width+'.png',fullPage:true});
+                console.log('PASS activity card art '+width);
+                await page.close();
+              }
+            }finally{await browser.close();}
+          })().catch(e=>{console.error(e);process.exit(1)});
+          NODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
