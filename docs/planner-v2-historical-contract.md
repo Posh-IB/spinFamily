@@ -42,3 +42,11 @@ Status: historical reconciliation, not an implementation approval or production 
 - Precise previous private WP2 data contracts and conflict-resolution rules.
 
 No changes to production, Stripe, Identity, database or paid activation are authorized by this record.
+
+## Founder clarification — content moderation (Oct 12, 2026)
+- 'Type of activities that can be added' refers to **permitted versus prohibited content**, not new activity categories, scheduling metadata or input fields.
+- Preserve and strengthen existing family-friendly custom-activity moderation. The existing client-side regex screen is a legacy minimum, not adequate security or the authoritative complete policy.
+- Recover prior exact prohibited-content wording and obfuscation rules before finalizing the canonical moderation taxonomy; do not silently invent founder-approved prohibitions.
+- Candidate review domains, pending policy reconciliation: sexual/explicit content involving minors, violence/abuse, illegal drug or criminal activities, hate/harassment, profanity/adult-oriented descriptions, and evasive spellings (leetspeak, spacing, repeated characters). Context-sensitive handling should minimize false positives for legitimate family activities.
+- Enforce moderation server-side on creation and edit, and on import/migration; client-side feedback is advisory. Store a policy version and structured rejection reason; do not store rejected text unnecessarily.
+- Do not let custom entries bypass age/feasibility constraints or inherit curated-catalog trust. Do not change production or paid entitlement status as part of this clarification.
