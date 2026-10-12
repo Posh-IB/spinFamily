@@ -6,7 +6,7 @@ Status: implementation branch, not released. Parent: PR #5 presentation candidat
 - Guest mode stays anonymous, functional and free. Login never blocks spinning.
 - Netlify Identity is the authentication provider; server endpoints verify identity, not browser-provided user IDs.
 - Netlify Database (managed PostgreSQL) is the persistence target, subject to confirming project eligibility and cost controls.
-- Billing provider proposed: Stripe Checkout + Billing Portal; no payment provider is activated by this branch.
+- Billing provider CONFIRMED: existing Stripe live-mode SpinFamily Plus product and two hosted recurring Payment Links. Reuse; do not recreate. Billing Portal and entitlement sync are separate unverified integrations.
 - Household subscription entitlement is server-owned and derives only from verified billing webhook events, never client input.
 - Children are not account holders. Minimize data: aliases and optional preferences only; avoid birthdates, school, location, sensitive notes.
 - Preview deployments must not expose production household data. Verify Netlify Database branch seeding behavior before provisioning or inserting PII.
@@ -39,9 +39,17 @@ Status: implementation branch, not released. Parent: PR #5 presentation candidat
 - Enforce preview/staging separation, rate limits, structured redacted logs and rollback.
 
 ## Implementation gates
-G0: verify Identity configuration, Netlify plan eligibility, database billing limits and Stripe account/test mode.
+G0: verify Identity configuration, Netlify plan eligibility, database billing limits, and existing Stripe live-mode configuration; keep live billing isolated from preview tests.
 G1: add migration + backend endpoints; local and preview tests with synthetic data only.
 G2: add opt-in login and household save UI behind feature flag; anonymous regression.
-G3: add Stripe test-mode checkout/portal and verified webhook; negative-path tests.
+G3: reconcile existing hosted Stripe payment links with verified webhook and authenticated household entitlements in a safe test environment; do not replace links or create live products.
 G4: founder review of privacy, pricing, retention, costs and test evidence.
 G5: separate explicit production activation approval. No production activation is authorized here.
+
+## Verified Stripe inventory (2026-10-11)
+- Account: Chasing Dreams Development Team, `acct_1QeSzoRrMKZPnWh6` (live mode).
+- Product: SpinFamily Plus, `prod_UOZPq0BirfAd6k`.
+- Monthly $4.99: `price_1TPmH9RrMKZPnWh6iNNzYe3T`, existing link https://buy.stripe.com/28E28tgIs0Kz7hYajZ6EU00.
+- Annual $49: `price_1TPmOWRrMKZPnWh6fANoj8uT`, existing link https://buy.stripe.com/bJe8wRgIs1OD9q677N6EU01.
+- Both hosted payment links are active, recurring, and live. Do not change them.
+- Production `main` HTML has no visible Stripe billing code and repository tree contains no Stripe backend files; entitlement synchronization remains unverified.
