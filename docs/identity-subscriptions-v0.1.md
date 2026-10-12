@@ -3,7 +3,7 @@
 Status: implementation branch, not released. Parent: PR #5 presentation candidate.
 
 ## Decisions
-- Guest mode stays anonymous, functional and free. Login never blocks spinning.
+- Guest mode stays anonymous, functional and free. Login never blocks spinning. Custom activity creation, durable saved activities, behavior history and personalization are Plus-only capabilities.
 - Netlify Identity is the authentication provider; server endpoints verify identity, not browser-provided user IDs.
 - Netlify Database (managed PostgreSQL) is the persistence target, subject to confirming project eligibility and cost controls.
 - Billing provider CONFIRMED: existing Stripe live-mode SpinFamily Plus product and two hosted recurring Payment Links. Reuse; do not recreate. Billing Portal and entitlement sync are separate unverified integrations.
@@ -23,7 +23,8 @@ Status: implementation branch, not released. Parent: PR #5 presentation candidat
 ## Required server routes
 - GET /api/me — verified identity and household entitlement.
 - GET/POST /api/household — owner-scoped household and aliases.
-- GET/POST /api/plans — owner-scoped saved plans; validate payload size.
+- GET/POST /api/plans — Plus-only owner-scoped saved plans; validate payload size.
+- GET/POST /api/activity-events — Plus-only server-validated events: selected, completed, skipped, swapped. Use bounded event history to calculate repeat avoidance and weekly variety; never let event history determine authorization.
 - POST /api/billing/checkout — authenticated owner; allowlisted Stripe price ID; server-created session.
 - POST /api/billing/portal — authenticated owner; existing Stripe customer only.
 - POST /api/billing/webhook — verify raw Stripe signature, transactionally deduplicate event ID, update subscription state.
@@ -32,7 +33,7 @@ Status: implementation branch, not released. Parent: PR #5 presentation candidat
 - 401 on missing/invalid token; 403 on cross-household requests; no household IDs trusted from browser.
 - Server determines household from authenticated subject on every request.
 - No client-writeable premium flags, no secret keys in HTML or JS bundles.
-- No paid access granted from Checkout redirect or unverified webhook.
+- No paid access granted from Checkout redirect or unverified webhook. Existing hosted payment links must be associated with a verified signed-in subject using a tamper-resistant server-issued claim reference, confirmed against Stripe checkout/subscription objects and webhook records. Email-only matching is insufficient.
 - Handle canceled, unpaid, past_due and trialing states explicitly.
 - Add tests for cross-account isolation, webhook replay/out-of-order events, subscription cancellation, anonymous continuity and plan persistence.
 - Define deletion/export and retention before real household data is collected.
@@ -53,3 +54,13 @@ G5: separate explicit production activation approval. No production activation i
 - Annual $49: `price_1TPmOWRrMKZPnWh6fANoj8uT`, existing link https://buy.stripe.com/bJe8wRgIs1OD9q677N6EU01.
 - Both hosted payment links are active, recurring, and live. Do not change them.
 - Production `main` HTML has no visible Stripe billing code and repository tree contains no Stripe backend files; entitlement synchronization remains unverified.
+
+## Founder-approved Plus entitlement policy
+- Free: anonymous wheel, curated activity browsing and ephemeral plans. No forced signup.
+- Plus: custom activity creation; persistent custom activities and plans across refresh/logout; activity history; detection of repeated choices and swaps; anti-monotony suggestions and week-level tailoring.
+- Plus status is a feature entitlement only; it conveys no backend, admin, database, dashboard or API management access.
+- Browser cannot be trusted to claim entitlement, ownership, event history or Stripe customer IDs. Server must verify signed-in subject, ownership and active subscription on each premium request.
+- Guest session data is ephemeral. After Plus activation, opt-in migration can move user-entered custom activities into the authenticated household; never automatically upload participant data.
+- Personalization v0.1 uses explainable deterministic rules: recent-use penalty, swap/skip penalty, category variety and caregiver override. No external AI model, child profiling or opaque cognitive scoring.
+- Privacy: event logs record activity IDs, timestamps, action and household reference; avoid free-text child profiles and sensitive inferences. Offer history deletion and configurable retention.
+- Existing Stripe links remain untouched. Subscription linkage needs verified Checkout Session / subscription ownership and a securely issued household correlation reference; success URL alone cannot activate Plus.
