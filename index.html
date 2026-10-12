@@ -178,7 +178,13 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 
 /* Preserve the warm illustrated baseline as the background on all internal pages.
    Cinematic character art is used only within individual Activities cards. */
-.activity-tile .activity-art.activity-photo{background-image:url('assets/cinematic-family-atlas.webp')!important;background-size:300% 300%!important;background-repeat:no-repeat!important;background-color:#f4cdb6!important;text-shadow:none!important}
+
+
+.activity-tile .activity-art.activity-photo{position:relative;overflow:hidden;padding:0!important;background:#f8e5d5!important;aspect-ratio:69/56;height:auto!important}
+.activity-tile .activity-art.activity-photo img{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;max-width:none}
+.activity-photo .art-fallback{display:none;position:absolute;inset:0;place-items:center;font-size:48px;color:#103d53;background:linear-gradient(135deg,#fff1e5,#eaf8f5)}
+.activity-photo.image-unavailable .art-fallback{display:grid}
+.activity-photo img[hidden]{display:none}
   </style>
 </head>
 <body>
@@ -364,13 +370,30 @@ function spin(){
 function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
 
 let activityFilter='all';
-const cardArtPositions={
-'Clean the kitchen':'0% 0%','Fold a laundry load':'50% 0%','Organize toys':'100% 0%','Wipe counters':'0% 50%','Quick room reset':'50% 50%','Cook together':'100% 50%',
-'Take a family walk':'0% 100%','Visit the park':'50% 100%','Tend the garden':'50% 100%','Family bike ride':'0% 100%','Go stargazing':'100% 100%',
-'Play a board game':'100% 100%','Read a story together':'100% 100%','Arts and crafts':'0% 50%','Journal or draw':'0% 50%',
-'Quiet reading':'100% 100%','Family breathing break':'100% 100%','Wind-down bath':'50% 50%','Early bedtime routine':'100% 100%','Family movie night':'100% 100%'
+const activityArtwork={"clean the kitchen":"assets/activities/clean-the-kitchen.webp","fold a laundry load":"assets/activities/fold-a-laundry-load.webp","organize toys":"assets/activities/organize-toys.webp","wipe counters":"assets/activities/wipe-counters.webp","quick room reset":"assets/activities/quick-room-reset.webp","cook together":"assets/activities/cook-together.webp","read a story together":"assets/activities/read-a-story-together.webp","arts and crafts":"assets/activities/arts-and-crafts.webp","journal or draw":"assets/activities/journal-or-draw.webp","quiet reading":"assets/activities/quiet-reading.webp","family breathing break":"assets/activities/family-breathing-break.webp","wind down bath":"assets/activities/wind-down-bath.webp","take a family walk":"assets/activities/take-a-family-walk.webp","visit the park":"assets/activities/visit-the-park.webp","tend the garden":"assets/activities/tend-the-garden.webp","family bike ride":"assets/activities/family-bike-ride.webp","go stargazing":"assets/activities/go-stargazing.webp","play a board game":"assets/activities/play-a-board-game.webp","dance party":"assets/activities/dance-party.webp","family movie night":"assets/activities/family-movie-night.webp"};
+const categoryArtwork={
+ chore:'assets/activities/clean-the-kitchen.webp',
+ outdoor:'assets/activities/take-a-family-walk.webp',
+ family:'assets/activities/arts-and-crafts.webp',
+ selfcare:'assets/activities/quiet-reading.webp'
 };
-const cardArt=(name,category)=>'<div class="activity-art activity-photo" style="background-position:'+(cardArtPositions[name]||({chore:'0% 0%',outdoor:'50% 100%',family:'0% 50%',selfcare:'100% 100%'}[category]))+'" role="img" aria-label="Family activity illustration"></div>';
+const cardArt=(name,category)=>{
+ const key=String(name).toLocaleLowerCase('en-US').replaceAll('-',' ').trim();
+ const known=Object.hasOwn(activityArtwork,key);
+ const fallback=Object.hasOwn(categoryArtwork,category)?categoryArtwork[category]:categoryArtwork.family;
+ const source=known?activityArtwork[key]:fallback;
+ const description='Representative '+(labels[category]||'family activity')+' illustration';
+ const alt=known?'Illustration for '+name:description;
+ return '<div class="activity-art activity-photo"><img loading="lazy" decoding="async" src="'+source+'" data-art-fallback="'+fallback+'" alt="'+escapeHtml(alt)+'" width="552" height="448"><span class="art-fallback" role="img" aria-label="'+escapeHtml(description)+'">'+({chore:'⌂',outdoor:'♣',family:'✿',selfcare:'☾'}[category]||'✿')+'</span></div>';
+};
+// Asset errors cannot produce an infinite retry or a broken-image placeholder.
+document.addEventListener('error',event=>{
+ const image=event.target;
+ if(!(image instanceof HTMLImageElement)||!image.matches('.activity-photo img'))return;
+ const fallback=image.dataset.artFallback;
+ if(image.getAttribute('src')!==fallback){image.src=fallback;image.alt='Representative category illustration';}
+ else{image.hidden=true;image.parentElement.classList.add('image-unavailable');}
+},true);
 function renderActivities(){
  const icons={chore:'⌂',outdoor:'♣',family:'✿',selfcare:'☾'};
  const sceneFor=name=>/read|story|journal|quiet|bedtime|bath|breath/i.test(name)?'unwind':/walk|park|garden|bike|star/i.test(name)?'outdoor':/craft|draw|board game|movie|play/i.test(name)?'creative':'home';
