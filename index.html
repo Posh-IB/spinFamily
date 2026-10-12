@@ -178,6 +178,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 
 /* Preserve the warm illustrated baseline as the background on all internal pages.
    Cinematic character art is used only within individual Activities cards. */
+.activity-tile .activity-art.activity-photo{background-image:url('assets/cinematic-family-atlas.webp')!important;background-size:300% 300%!important;background-repeat:no-repeat!important;background-color:#f4cdb6!important;text-shadow:none!important}
   </style>
 </head>
 <body>
@@ -363,17 +364,24 @@ function spin(){
 function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
 
 let activityFilter='all';
+const cardArtPositions={
+'Clean the kitchen':'0% 0%','Fold a laundry load':'50% 0%','Organize toys':'100% 0%','Wipe counters':'0% 50%','Quick room reset':'50% 50%','Cook together':'100% 50%',
+'Take a family walk':'0% 100%','Visit the park':'50% 100%','Tend the garden':'50% 100%','Family bike ride':'0% 100%','Go stargazing':'100% 100%',
+'Play a board game':'100% 100%','Read a story together':'100% 100%','Arts and crafts':'0% 50%','Journal or draw':'0% 50%',
+'Quiet reading':'100% 100%','Family breathing break':'100% 100%','Wind-down bath':'50% 50%','Early bedtime routine':'100% 100%','Family movie night':'100% 100%'
+};
+const cardArt=(name,category)=>'<div class="activity-art activity-photo" style="background-position:'+(cardArtPositions[name]||({chore:'0% 0%',outdoor:'50% 100%',family:'0% 50%',selfcare:'100% 100%'}[category]))+'" role="img" aria-label="Family activity illustration"></div>';
 function renderActivities(){
  const icons={chore:'⌂',outdoor:'♣',family:'✿',selfcare:'☾'};
  const sceneFor=name=>/read|story|journal|quiet|bedtime|bath|breath/i.test(name)?'unwind':/walk|park|garden|bike|star/i.test(name)?'outdoor':/craft|draw|board game|movie|play/i.test(name)?'creative':'home';
  const rows=[];
  Object.entries(defaults).forEach(([category,items])=>items.forEach(([icon,name,duration])=>{
   if(activityFilter!=='all'&&category!==activityFilter)return;
-  rows.push('<article class="activity-tile cat-'+category+'"><div class="activity-art activity-scene scene-'+sceneFor(name)+'" aria-hidden="true"><span class="activity-scene-icon">'+icons[category]+'</span></div><div class="activity-body"><div class="activity-name">'+icon+' '+escapeHtml(name)+'</div><div class="activity-meta">'+labels[category]+' · '+duration+' min · curated</div></div></article>');
+  rows.push('<article class="activity-tile cat-'+category+'">'+cardArt(name,category)+'<div class="activity-body"><div class="activity-name">'+icon+' '+escapeHtml(name)+'</div><div class="activity-meta">'+labels[category]+' · '+duration+' min · curated</div></div></article>');
  }));
  custom.forEach(x=>{
   if(activityFilter!=='all'&&x.category!==activityFilter)return;
-  rows.push('<article class="activity-tile cat-'+x.category+'"><div class="activity-art" aria-hidden="true">★</div><div class="activity-body"><div class="activity-name">⭐ '+escapeHtml(x.name)+'</div><div class="activity-meta">'+labels[x.category]+' · custom · 20 min</div></div></article>');
+  rows.push('<article class="activity-tile cat-'+x.category+'">'+cardArt(x.name,x.category)+'<div class="activity-body"><div class="activity-name">⭐ '+escapeHtml(x.name)+'</div><div class="activity-meta">'+labels[x.category]+' · custom · 20 min</div></div></article>');
  });
  $('activityList').innerHTML=rows.join('');
 }
