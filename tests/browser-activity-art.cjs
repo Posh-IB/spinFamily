@@ -18,11 +18,11 @@ fs.mkdirSync('qa-screenshots',{recursive:true});
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow');
    await page.screenshot({path:'qa-screenshots/individual-activities-'+width+'.png',fullPage:true});
    // Exact custom Dance party uses the twentieth supplied asset, preserving the catalog.
-   await page.locator('#activityName').fill('Dance party');await page.locator('#activityCategory').selectOption('family');await page.locator('#addActivityBtn').click();
+   await page.locator('#activityName').fill('Dance party');await page.locator('#activityCategory').selectOption('family');await page.locator('#activityForm button[type="submit"]').click();
    const dance=page.locator('#activityList .activity-tile').nth(20);await dance.scrollIntoViewIfNeeded();assert.equal(await dance.locator('img').getAttribute('src'),'assets/activities/dance-party.webp');await dance.locator('img').evaluate(i=>i.decode());
    const fallbacks={chore:'clean-the-kitchen',outdoor:'take-a-family-walk',family:'arts-and-crafts',selfcare:'quiet-reading'};
    for(const category of Object.keys(fallbacks)){
-    await page.locator('#activityName').fill('Custom '+category+' activity');await page.locator('#activityCategory').selectOption(category);await page.locator('#addActivityBtn').click();
+    await page.locator('#activityName').fill('Custom '+category+' activity');await page.locator('#activityCategory').selectOption(category);await page.locator('#activityForm button[type="submit"]').click();
     const card=page.locator('#activityList .activity-tile').last();await card.scrollIntoViewIfNeeded();assert.equal(await card.locator('img').getAttribute('src'),'assets/activities/'+fallbacks[category]+'.webp');assert.ok((await card.locator('img').getAttribute('alt')).startsWith('Representative'));await card.locator('img').evaluate(i=>i.decode());
    }
    await page.screenshot({path:'qa-screenshots/custom-fallbacks-'+width+'.png',fullPage:true});
