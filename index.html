@@ -377,11 +377,14 @@ const categoryArtwork={
  family:'assets/activities/arts-and-crafts.webp',
  selfcare:'assets/activities/quiet-reading.webp'
 };
+// Normalize known display variants without changing the activity catalog.
+const artworkAliases={'early bedtime routine':'quiet reading','wind-down bath':'wind down bath'};
 const cardArt=(name,category)=>{
  const key=String(name).toLocaleLowerCase('en-US').replaceAll('-',' ').trim();
- const known=Object.hasOwn(activityArtwork,key);
+ const resolved=artworkAliases[key]||key;
+ const known=Object.hasOwn(activityArtwork,resolved);
  const fallback=Object.hasOwn(categoryArtwork,category)?categoryArtwork[category]:categoryArtwork.family;
- const source=known?activityArtwork[key]:fallback;
+ const source=known?activityArtwork[resolved]:fallback;
  const description='Representative '+(labels[category]||'family activity')+' illustration';
  const alt=known?'Illustration for '+name:description;
  return '<div class="activity-art activity-photo"><img loading="lazy" decoding="async" src="'+source+'" data-art-fallback="'+fallback+'" alt="'+escapeHtml(alt)+'" width="552" height="448"><span class="art-fallback" role="img" aria-label="'+escapeHtml(description)+'">'+({chore:'⌂',outdoor:'♣',family:'✿',selfcare:'☾'}[category]||'✿')+'</span></div>';
@@ -396,7 +399,6 @@ document.addEventListener('error',event=>{
 },true);
 function renderActivities(){
  const icons={chore:'⌂',outdoor:'♣',family:'✿',selfcare:'☾'};
- const sceneFor=name=>/read|story|journal|quiet|bedtime|bath|breath/i.test(name)?'unwind':/walk|park|garden|bike|star/i.test(name)?'outdoor':/craft|draw|board game|movie|play/i.test(name)?'creative':'home';
  const rows=[];
  Object.entries(defaults).forEach(([category,items])=>items.forEach(([icon,name,duration])=>{
   if(activityFilter!=='all'&&category!==activityFilter)return;
