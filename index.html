@@ -185,6 +185,16 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 .activity-photo .art-fallback{display:none;position:absolute;inset:0;place-items:center;font-size:48px;color:#103d53;background:linear-gradient(135deg,#fff1e5,#eaf8f5)}
 .activity-photo.image-unavailable .art-fallback{display:grid}
 .activity-photo img[hidden]{display:none}
+#householdPanel form{display:grid;gap:12px;margin:16px 0}
+#householdPanel label{display:grid;gap:6px;font-weight:600;font-size:14px}
+#householdPanel input{width:100%;box-sizing:border-box;min-height:46px;border:1px solid #d5aaa1;border-radius:12px;padding:10px 12px;background:#fffaf5;color:#103d53;font:inherit}
+#householdPanel button,#saveHouseholdActivity{min-height:46px;max-width:100%;border:1px solid #007f8c;border-radius:12px;padding:10px 16px;margin:4px 4px 4px 0;background:#e6f7f4;color:#103d53;font:inherit;font-weight:600;cursor:pointer}
+#householdPanel form button,#saveHouseholdActivity{background:#007f8c;color:#fff}
+#householdPanel :is(input,button):focus-visible,#saveHouseholdActivity:focus-visible{outline:3px solid #103d53;outline-offset:3px}
+#householdPanel button:disabled,#saveHouseholdActivity:disabled{opacity:.65;cursor:wait}
+#householdPanel [hidden],#saveHouseholdActivity[hidden]{display:none!important}
+#householdPanel #savedActivities{padding-left:20px;overflow-wrap:anywhere}
+#householdPanel #householdStatus{margin:10px 0}
   </style>
 </head>
 <body>
@@ -255,7 +265,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <div class="family-options"><button type="button" data-family-member="Mom">👩 <span>Mom</span></button><button type="button" data-family-member="Dad">👨 <span>Dad</span></button><button type="button" data-family-member="Emma">👧 <span>Emma</span></button><button type="button" data-family-member="Lucas">👦 <span>Lucas</span></button></div>
       <p class="family-selection" id="familySelection" role="status">Currently choosing: Mom</p>
     </section>
-    <section class="card" aria-labelledby="householdTitle">
+    <section class="card" id="householdPanel" aria-labelledby="householdTitle">
       <h3 id="householdTitle">Caregiver household account · Test preview</h3>
       <p id="householdStatus" role="status" aria-live="polite">Guest planning remains free. Accounts and saved activities require an isolated test environment.</p>
       <form id="householdLogin">
