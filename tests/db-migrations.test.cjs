@@ -1,9 +1,9 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
-const {Client}=require('pg');
 const url=process.env.DATABASE_TEST_URL;
 test('two-stage schema migration enforces separate household ownership and webhook deduplication',{skip:!url},async()=>{
+ const {Client}=require('pg');
  const db=new Client({connectionString:url});
  await db.connect();
  try{
