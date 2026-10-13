@@ -7,4 +7,13 @@ test('browser publish directory contains only approved static assets and Identit
  const bundle=await readFile('dist/household.js','utf8');for(const value of ['SPINFAMILY_STRIPE_TEST_KEY','pg_advisory_xact_lock','createPlusService','stripe_processed_events'])assert.ok(!bundle.includes(value),value);
  assert.ok(!(await readdir('netlify/functions')).includes('custom-activity.cjs'));
 });
-test('automatic hosted builds remain held pending verified isolation',async()=>{assert.match(await readFile('netlify.toml','utf8'),/ignore = "exit 0"/);});
+test('preview builds enabled while server entitlement stays restricted to isolated Stripe test mode',async()=>{
+ const config=await readFile('netlify.toml','utf8');
+ assert.doesNotMatch(config,/^\s*ignore\s*=\s*["']exit 0["']/m);
+ assert.match(config,/command\s*=\s*"npm run build"/);
+ assert.match(config,/publish\s*=\s*"dist"/);
+ const runtime=await readFile('server/runtime.mjs','utf8');
+ assert.match(runtime,/deploy-preview/);
+ assert.match(runtime,/SPINFAMILY_ISOLATION_VERIFIED/);
+ assert.match(runtime,/SPINFAMILY_STRIPE_TEST_KEY/);
+});
