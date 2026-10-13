@@ -30,3 +30,32 @@ jobs:
           node --check netlify/functions/plus-portal.mjs
           node --check netlify/functions/stripe-webhook.mjs
           node --check netlify/functions/custom-activity.cjs
+  database-migration-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: spinfamily
+          POSTGRES_PASSWORD: spinfamily_test_only
+          POSTGRES_DB: spinfamily_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd 'pg_isready -U spinfamily -d spinfamily_test'
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_TEST_URL: postgres://spinfamily:spinfamily_test_only@localhost:5432/spinfamily_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies for isolated migration test
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run schema integration and boundary tests
+        run: npm test
