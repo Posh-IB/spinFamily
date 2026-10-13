@@ -37,10 +37,10 @@ export default async function handler(req){
   const db=getDatabase(),client=await db.pool.connect();
   try{
    await client.query('BEGIN');
-   const inserted=await client.query(`INSERT INTO billing_events
-      (provider_event_id,event_type,provider_created_at,outcome)
+   const inserted=await client.query(`INSERT INTO stripe_processed_events
+      (event_id,event_type,event_created_at,outcome)
       VALUES($1,$2,to_timestamp($3),$4)
-      ON CONFLICT(provider_event_id) DO NOTHING RETURNING provider_event_id`,
+      ON CONFLICT(event_id) DO NOTHING RETURNING event_id`,
       [event.id,event.type,event.created,'ignored_irrelevant']);
    if(!inserted.rowCount){
     await client.query('ROLLBACK');
@@ -79,7 +79,7 @@ export default async function handler(req){
         state.status,state.periodEnd,event.created,state.customerId]);
     }
    }
-   await client.query('UPDATE billing_events SET outcome=$2 WHERE provider_event_id=$1',[event.id,outcome]);
+   await client.query('UPDATE stripe_processed_events SET outcome=$2 WHERE event_id=$1',[event.id,outcome]);
    await client.query('COMMIT');
   }catch(err){await client.query('ROLLBACK');throw err;}finally{client.release();}
   return respond({received:true});
