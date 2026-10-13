@@ -10,5 +10,8 @@
     "@netlify/database": "latest",
     "@netlify/identity": "latest",
     "stripe": "^18.0.0"
+  },
+  "devDependencies": {
+    "pg": "^8.16.0"
   }
 }
