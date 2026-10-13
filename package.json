@@ -3,10 +3,19 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "test:boundary": "node --test tests/activity-moderation.test.cjs tests/household-boundary.test.cjs"
+    "test:boundary": "node --test tests/activity-moderation.test.cjs tests/household-boundary.test.cjs",
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs",
+    "build": "node scripts/build.mjs"
   },
   "dependencies": {
-    "@netlify/database": "latest",
-    "@netlify/identity": "latest"
+    "@netlify/database": "2.0.1",
+    "@netlify/identity": "2.0.0",
+    "pg": "8.23.1",
+    "stripe": "23.0.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.2.17",
+    "esbuild": "0.28.2",
+    "playwright": "1.64.0"
   }
 }

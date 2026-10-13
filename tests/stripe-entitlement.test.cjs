@@ -9,10 +9,10 @@ test('requires valid signature and timestamp',()=>{
  assert.equal(verifyStripeSignature(raw+'x',sig(raw),secret,now),false);
  assert.equal(verifyStripeSignature(raw,sig(raw,now-301),secret,now),false);
 });
-test('verified event requires live mode',()=>{
- assert.equal(parseVerifiedEvent(raw,sig(raw),secret)?.id,'evt_1');
+test('verified event defaults to isolated test mode and deterministic clock',()=>{
+ assert.equal(parseVerifiedEvent(raw,sig(raw),secret,{now}),null);
  const testRaw=raw.replace('"livemode":true','"livemode":false');
- assert.equal(parseVerifiedEvent(testRaw,sig(testRaw),secret),null);
+ assert.equal(parseVerifiedEvent(testRaw,sig(testRaw),secret,{now})?.id,'evt_1');
 });
 test('subscription update only for previously linked customer and known price',()=>{
  const e=JSON.parse(raw);

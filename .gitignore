@@ -1,0 +1,6 @@
+node_modules/
+.netlify/
+dist/
+.env*
+qa-screenshots/
+test-results/

@@ -1,0 +1,8 @@
+[build]
+  # Hold automatic hosted builds until preview DB isolation and secrets are verified.
+  ignore = "exit 0"
+  command = "npm run build"
+  publish = "dist"
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
