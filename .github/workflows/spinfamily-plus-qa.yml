@@ -1,5 +1,8 @@
 name: SpinFamily isolated Plus engineering QA
 on:
+  workflow_dispatch:
+  pull_request:
+    branches: [work/identity-subscriptions-2026-10-11]
   push:
     branches: [work/plus-lifecycle-hardening-2026-10-12]
 permissions:

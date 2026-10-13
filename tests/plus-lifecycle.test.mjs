@@ -43,7 +43,7 @@ test('cross-household edit/delete denied even when both have Plus; forged househ
  assert.equal((await service.activities('monthly','GET')).activities.length,1);
 });
 test('moderation stops contextual spaced evasions without rejecting ordinary words',async()=>{
- for(const name of ['Play f u c k games','Watch p.o.r.n tonight','Use c0caine'])await assert.rejects(service.activities('monthly','POST',{name,category:'family'}),/blocked_content/);
+ for(const name of ['Play f u c k games','Watch p.o.r.n tonight','Use c0caine','Watch p\u200born','Play fuuuuck games'])await assert.rejects(service.activities('monthly','POST',{name,category:'family'}),/blocked_content/);
  for(const name of ['Watch a classic movie','Take a class','Try an assignment'])assert.equal((await service.activities('monthly','POST',{name,category:'family'})).activity.name,name);
 });
 test('Plus activity edit and deletion are scoped and persisted',async()=>{
