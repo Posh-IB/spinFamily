@@ -26,6 +26,8 @@ fs.mkdirSync('qa-screenshots',{recursive:true});
     const card=page.locator('#activityList .activity-tile').last();await card.scrollIntoViewIfNeeded();assert.equal(await card.locator('img').getAttribute('src'),'assets/activities/'+fallbacks[category]+'.webp');assert.ok((await card.locator('img').getAttribute('alt')).startsWith('Representative'));await card.locator('img').evaluate(i=>i.decode());
    }
    await page.screenshot({path:'qa-screenshots/custom-fallbacks-'+width+'.png',fullPage:true});
+   // Keep the newly re-rendered lazy card in view and eager before forcing network errors.
+   await dance.scrollIntoViewIfNeeded();await dance.locator('img').evaluate(i=>{i.loading='eager';});
    // Deliberate asset failure, actual browser error events; no mocked app response.
    await page.route('**/assets/activities/dance-party.webp*',r=>r.abort());await dance.locator('img').evaluate(i=>{i.src='assets/activities/dance-party.webp?failure=1';});
    await page.waitForFunction(()=>document.querySelectorAll('#activityList .activity-tile')[20].querySelector('img').getAttribute('src')==='assets/activities/arts-and-crafts.webp');
