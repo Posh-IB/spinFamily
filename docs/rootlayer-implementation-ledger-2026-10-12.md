@@ -29,3 +29,7 @@ Private core: Posh-IB/spinFamily-core; do not copy private planning algorithms i
 - Rootlayer Software Notion page https://app.notion.com/p/3f75dd5a1079817f8b29e87760e6435e records this scope and gate.
 - FinOps: confirm credit-based Netlify plan, branch auto-sleep, active compute/egress costs, DB branch before approving any persistent preview and do not accrue costs from idle apps.
 - Release remains blocked until Netlify preview isolation, signed test webhook, full checkout → active → canceled/expired/failed-payment → revoked entitlement, multi-tenant isolation, and CI are actually verified.
+
+## Verified CI evidence
+- 2026-10-13 run https://github.com/Posh-IB/spinFamily/actions/runs/38431616006: both `boundary-tests` and `database-migration-tests` jobs succeeded; 30/30 PostgreSQL-backed tests passed.
+- Does not prove deployed Netlify database branch, live Stripe webhook, browser session, or full checkout-to-revocation cycle. These remain external integration gates.
