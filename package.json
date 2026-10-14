@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "test:boundary": "node --test tests/activity-moderation.test.cjs tests/household-boundary.test.cjs",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "build": "node scripts/build.mjs"
   },
   "dependencies": {
     "@netlify/database": "latest",
@@ -12,6 +13,7 @@
     "stripe": "^18.0.0"
   },
   "devDependencies": {
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "esbuild": "^0.25.12"
   }
 }
