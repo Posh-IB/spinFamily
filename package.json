@@ -10,10 +10,10 @@
   "dependencies": {
     "@netlify/database": "latest",
     "@netlify/identity": "latest",
-    "stripe": "^18.0.0"
+    "stripe": "^18.0.0",
+    "pg": "^8.16.0"
   },
   "devDependencies": {
-    "pg": "^8.16.0",
     "esbuild": "^0.25.12"
   }
 }
