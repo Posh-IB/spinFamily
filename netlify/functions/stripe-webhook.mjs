@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
-import { getDatabase } from '@netlify/database';
+import { getConnectionString } from '@netlify/database';
+import pg from 'pg';
 import policy from '../../lib/billing-policy.cjs';
 const {validConfig,snapshot}=policy;
 const respond=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
@@ -34,7 +35,8 @@ export default async function handler(req){
  const state=snapshot(subscription,env);
  let outcome='ignored_irrelevant';
  try{
-  const db=getDatabase(),client=await db.pool.connect();
+  const pool=new pg.Pool({connectionString:getConnectionString(),max:1});
+  const client=await pool.connect();
   try{
    await client.query('BEGIN');
    const inserted=await client.query(`INSERT INTO stripe_processed_events
@@ -81,7 +83,7 @@ export default async function handler(req){
    }
    await client.query('UPDATE stripe_processed_events SET outcome=$2 WHERE event_id=$1',[event.id,outcome]);
    await client.query('COMMIT');
-  }catch(err){await client.query('ROLLBACK');throw err;}finally{client.release();}
+  }catch(err){await client.query('ROLLBACK');throw err;}finally{client.release();await pool.end();}
   return respond({received:true});
  }catch{return respond({error:'webhook_processing_failed'},503);}
 }
