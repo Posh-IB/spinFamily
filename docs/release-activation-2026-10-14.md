@@ -48,3 +48,11 @@ Connected Netlify tool can manage env vars, but cannot attach a custom domain, c
 - Do **not** assume there is no earlier SpinFamily payment attempt. Its provider records must be queried from the historical merchant account ID. Do **not** copy Stripe credentials from another Rootlayer product, create duplicate live products, or switch SpinFamily live billing to the newly authorized account.
 - Blocker: obtain and authorize the exact historical Stripe account acct_1QeSzoRrMKZPnWh6, then inspect payment-link-derived Checkout Sessions (including expired/incomplete), PaymentIntents, charges, and subscriptions before live release.
 - Stripe QA sandbox remains separately connected; this audit made no mutations to either live merchant account.
+
+## October 14 final pre-deadline hardening
+- The founder requested finishing without real-money pay/refund testing. No real-money payment has been attempted; synthetic Stripe signature/entitlement and Postgres isolation CI remain the test strategy.
+- Same-origin validation added to authenticated Plus mutations, checkout, and portal functions, preserving guest wheel access.
+- Netlify Database webhook updated to obtain a PostgreSQL connection from `getConnectionString()` rather than assuming an undocumented `db.pool` interface; `pg` is now runtime dependency.
+- The current published Netlify production deploy (September prototype, commit `dd3be2b`) has **zero functions deployed** and no database branch ID. GitHub Actions passing on draft PR #7 does not mean Netlify deploys PR #7.
+- No connected Netlify action can directly trigger deploy, set custom domain or DNS, or inspect hosted database migrations. Domain and Plus activation still require browser-based Netlify deployment and identity verification, separate Stripe signing key configuration, and service evidence. Never mark billing launch complete solely from unit tests.
+- Release safety option: ship free guest SpinFamily experience independently if necessary, keep paid UI disabled until server-side verification is functional; do not present paywall as purchasable and usable before entitlement proof.
