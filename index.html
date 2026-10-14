@@ -185,6 +185,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 .activity-photo .art-fallback{display:none;position:absolute;inset:0;place-items:center;font-size:48px;color:#103d53;background:linear-gradient(135deg,#fff1e5,#eaf8f5)}
 .activity-photo.image-unavailable .art-fallback{display:grid}
 .activity-photo img[hidden]{display:none}
+  [hidden]{display:none!important}
   </style>
 </head>
 <body>
@@ -239,12 +240,26 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       </div>
       <div class="card-title">Curated + custom activities</div>
       <div class="category-filters" id="activityFilters" aria-label="Filter activities"><button type="button" class="filter-chip active" data-filter="all" aria-pressed="true">All</button><button type="button" class="filter-chip" data-filter="chore" aria-pressed="false">At Home</button><button type="button" class="filter-chip" data-filter="outdoor" aria-pressed="false">Out &amp; About</button><button type="button" class="filter-chip" data-filter="family" aria-pressed="false">Creative</button><button type="button" class="filter-chip" data-filter="selfcare" aria-pressed="false">Relax &amp; Unwind</button></div><div id="activityList" class="activity-grid"></div>
-      <form class="add-form" id="activityForm">
+      <form class="add-form" id="activityForm" hidden>
         <input id="activityName" maxlength="60" placeholder="Add a family-friendly activity" required aria-label="Activity name">
         <select id="activityCategory" aria-label="Activity category"><option value="chore">Chores</option><option value="outdoor">Outdoor</option><option value="family">Family</option><option value="selfcare">Self Care</option></select>
-        <button type="submit">Add activity for this session</button>
+        <button type="submit">Save custom activity</button>
       </form>
-      <p class="helper">Custom activities are stored only in memory in this Gate 1 prototype and reset when the page refreshes. Local persistence is scheduled for Gate 4.</p>
+      <section class="card" id="plusAccountPanel" aria-label="SpinFamily Plus account">
+  <h3>SpinFamily Plus</h3>
+  <p id="plusAccountStatus" role="status" aria-live="polite">Checking account services…</p>
+  <form id="plusAuthForm" class="add-form">
+    <input id="plusEmail" type="email" autocomplete="email" required placeholder="Email address" aria-label="Email address">
+    <input id="plusPassword" type="password" autocomplete="current-password" required minlength="8" placeholder="Password" aria-label="Password">
+    <button id="plusSignIn" type="submit">Sign in</button>
+    <button id="plusSignUp" type="button">Create account</button>
+  </form>
+  <button id="plusSignOut" type="button" hidden>Sign out</button>
+  <button id="plusMonthly" type="button" hidden>Plus monthly — $4.99</button>
+  <button id="plusAnnual" type="button" hidden>Plus yearly — $49</button>
+  <button id="plusManage" type="button" hidden>Manage subscription</button>
+  <p class="helper">The family wheel and curated activities are free. A verified Plus subscription is required to save custom activities.</p>
+</section>
     </section>
   </main>
 
@@ -415,7 +430,25 @@ document.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click'
  document.querySelectorAll('[data-filter]').forEach(t=>{const active=t===b;t.classList.toggle('active',active);t.setAttribute('aria-pressed',String(active));});
  renderActivities();
 }));
-function addActivity(e){e.preventDefault();const name=$('activityName').value.trim();const category=$('activityCategory').value;if(!name)return;if(custom.length>=20){alert('Session activity limit reached (20).');return;}if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}custom.push({name,category});$('activityName').value='';renderActivities();}
+window.spinFamilyHydrateCustomActivities=function(activities){
+ custom=Array.isArray(activities)?activities.filter(x=>x&&typeof x.name==='string'&&['chore','outdoor','family','selfcare'].includes(x.category)).slice(0,20).map(x=>({name:x.name,category:x.category})):[];
+ renderActivities();
+};
+async function addActivity(e){
+ e.preventDefault();
+ const name=$('activityName').value.trim(),category=$('activityCategory').value;
+ if(!name||!window.spinFamilyPlus){alert('Please sign in to SpinFamily Plus.');return;}
+ if(custom.length>=20){alert('Custom activity limit reached (20).');return;}
+ if(prohibited.some(re=>re.test(name))){alert('Please enter a family-friendly activity name.');return;}
+ const button=$('activityForm').querySelector('button[type="submit"]');
+ button.disabled=true;
+ try{
+   const activity=await window.spinFamilyPlus.add(name,category);
+   custom.push({name:activity.name,category:activity.category});
+   $('activityName').value='';renderActivities();
+ }catch{alert('Activity could not be saved. Verify your Plus subscription and try again.');}
+ finally{button.disabled=false;}
+}
 function switchPage(pageId,button){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
 // Anonymous participant context belongs to the active page session only.
 // Never store a child or household identifier in localStorage, cookies, or history.
@@ -446,5 +479,6 @@ document.querySelectorAll('.nav button').forEach(button=>button.addEventListener
 selectParticipant(currentMember);
 $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',()=>{$('results').classList.remove('open');$('acceptedStatus').textContent='Plan selected for tonight. This prototype does not record completion, streaks, or long-term history yet.';$('acceptedStatus').classList.add('show');});$('activityForm').addEventListener('submit',addActivity);document.addEventListener('keydown',e=>{if(e.key==='Escape')$('results').classList.remove('open');});renderActivities();
 </script>
+<script type="module" src="assets/plus-client.js"></script>
 </body>
 </html>
