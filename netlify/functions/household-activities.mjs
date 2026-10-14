@@ -1,10 +1,13 @@
+import security from '../../lib/request-security.cjs';
 import { getUser } from '@netlify/identity';
 import { getDatabase } from '@netlify/database';
 import moderation from '../../lib/activity-moderation.cjs';
 const { moderateActivity } = moderation;
+const {sameOriginMutation}=security;
 const respond=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
 export default async function handler(req){
  if(!['GET','POST'].includes(req.method))return respond({error:'method_not_allowed'},405);
+ if(req.method==='POST'&&!sameOriginMutation(req))return respond({error:'invalid_origin'},403);
  let user;
  try{user=await getUser();}catch{return respond({error:'authentication_unavailable'},503);}
  if(!user?.id)return respond({error:'authentication_required'},401);
