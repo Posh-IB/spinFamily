@@ -59,3 +59,10 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Run schema integration and boundary tests
         run: npm test
+      - name: Build production-equivalent static bundle
+        run: npm run build
+      - name: Verify bundled assets
+        run: |
+          test -s dist/index.html
+          test -s dist/assets/plus-client.js
+          test -f dist/assets/activities/manifest.json
