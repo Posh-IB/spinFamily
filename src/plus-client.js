@@ -131,7 +131,7 @@ window.spinFamilyPlus={
     const settings=await getSettings();
     signUp.hidden=settings.disableSignup;
     for(const [provider,enabled] of Object.entries(settings.providers||{})){
-      if(!enabled)continue;
+      if(!enabled||provider==='email')continue;
       const button=document.createElement('button');button.type='button';
       button.textContent='Continue with '+provider;
       button.addEventListener('click',()=>oauthLogin(provider));authForm.append(button);
