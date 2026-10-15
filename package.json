@@ -4,16 +4,17 @@
   "version": "0.1.0",
   "scripts": {
     "test:boundary": "node --test tests/activity-moderation.test.cjs tests/household-boundary.test.cjs",
-    "test": "node --test tests/*.test.cjs",
+    "test": "node --experimental-test-module-mocks --test tests/*.test.cjs",
     "build": "node scripts/build.mjs"
   },
   "dependencies": {
-    "@netlify/database": "latest",
-    "@netlify/identity": "latest",
-    "stripe": "^18.0.0",
-    "pg": "^8.16.0"
+    "@netlify/database": "2.0.1",
+    "@netlify/identity": "2.0.0",
+    "pg": "8.23.1",
+    "stripe": "18.5.0"
   },
   "devDependencies": {
-    "esbuild": "^0.25.12"
+    "esbuild": "0.25.12",
+    "playwright": "1.64.0"
   }
 }

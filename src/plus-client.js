@@ -1,4 +1,4 @@
-import { signup, login, logout, getUser, handleAuthCallback } from '@netlify/identity';
+import { signup, login, logout, getUser, handleAuthCallback, getSettings, oauthLogin } from '@netlify/identity';
 
 const byId = id => document.getElementById(id);
 const panel = byId('plusAccountPanel');
@@ -12,7 +12,7 @@ const signOut = byId('plusSignOut');
 const monthly = byId('plusMonthly');
 const annual = byId('plusAnnual');
 const manage = byId('plusManage');
-let activeUser = null, isPlus = false;
+let activeUser = null, isPlus = false, checkoutReady=false, portalReady=false, generation=0;
 
 function message(value) { status.textContent = value; }
 function resetActivities() {
@@ -23,9 +23,9 @@ function updateControls() {
   const authenticated = Boolean(activeUser);
   authForm.hidden = authenticated;
   signOut.hidden = !authenticated;
-  monthly.hidden = !authenticated || isPlus;
-  annual.hidden = !authenticated || isPlus;
-  manage.hidden = !authenticated || !isPlus;
+  monthly.hidden = !authenticated || isPlus || !checkoutReady;
+  annual.hidden = !authenticated || isPlus || !checkoutReady;
+  manage.hidden = !authenticated || !portalReady;
   byId('activityForm').hidden = !isPlus;
 }
 async function api(path,options={}) {
@@ -36,24 +36,38 @@ async function api(path,options={}) {
   return data;
 }
 async function refresh() {
-  activeUser=await getUser();
+  const epoch=++generation;
+  const user=await getUser();
+  if(epoch!==generation)return;
+  activeUser=user;
+  checkoutReady=false;portalReady=false;
   isPlus=false;
   resetActivities();
   if(!activeUser) {
     message('Guest mode: the family wheel and curated activities remain free. Sign in for SpinFamily Plus.');
     updateControls();return;
   }
+  updateControls();
   message('Signed in. Checking your SpinFamily Plus subscription…');
   try {
     const data=await api('/api/household/activities');
+    if(epoch!==generation)return;
     isPlus=true;
     window.spinFamilyHydrateCustomActivities?.(data.activities||[]);
     message('SpinFamily Plus is active. Your custom activities are saved to your household.');
   } catch (error) {
+    if(epoch!==generation)return;
     if(error.message==='plus_required'||error.message==='household_not_found')
       message('Signed in. Choose a SpinFamily Plus plan to save custom activities.');
     else message('Subscription check is unavailable. Premium features are temporarily disabled.');
   }
+  try{
+    const ready=await api('/api/billing/status');
+    if(epoch!==generation)return;
+    checkoutReady=ready.checkoutReady===true;portalReady=ready.portalReady===true;
+  }catch{}
+  if(epoch!==generation)return;
+  if(!isPlus&&!checkoutReady)message('Signed in. Plus checkout is not available yet. Free activities remain available.');
   updateControls();
 }
 async function authorize(action) {
@@ -75,6 +89,7 @@ signIn.addEventListener('click',()=>authorize('login'));
 signUp.addEventListener('click',()=>authorize('signup'));
 authForm.addEventListener('submit',event=>{event.preventDefault();authorize('login');});
 signOut.addEventListener('click',async()=>{
+  ++generation;activeUser=null;isPlus=false;checkoutReady=false;portalReady=false;resetActivities();updateControls();
   try{await logout();activeUser=null;isPlus=false;resetActivities();updateControls();message('Signed out. Guest mode is available.');}
   catch{message('Sign-out did not complete. Please retry.');}
 });
@@ -104,13 +119,25 @@ manage.addEventListener('click',async()=>{
 window.spinFamilyPlus={
   async add(name,category){
     if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation;
     const data=await api('/api/household/activities',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({name,category})});
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
     return data.activity;
   }
 };
 (async()=>{
-  try{await handleAuthCallback();await refresh();}
+  try{
+    const settings=await getSettings();
+    signUp.hidden=settings.disableSignup;
+    for(const [provider,enabled] of Object.entries(settings.providers||{})){
+      if(!enabled)continue;
+      const button=document.createElement('button');button.type='button';
+      button.textContent='Continue with '+provider;
+      button.addEventListener('click',()=>oauthLogin(provider));authForm.append(button);
+    }
+    await handleAuthCallback();await refresh();
+  }
   catch{activeUser=null;isPlus=false;resetActivities();updateControls();
     message('Account services are temporarily unavailable. Free activities still work.');}
 })();

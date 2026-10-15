@@ -18,15 +18,18 @@ fs.mkdirSync('qa-screenshots',{recursive:true});
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Horizontal overflow');
    await page.screenshot({path:'qa-screenshots/individual-activities-'+width+'.png',fullPage:true});
    // Exact custom Dance party uses the twentieth supplied asset, preserving the catalog.
-   await page.locator('#activityName').fill('Dance party');await page.locator('#activityCategory').selectOption('family');await page.locator('#activityForm button[type="submit"]').click();
+   await page.waitForFunction(()=>document.querySelector('#plusAccountStatus').textContent.includes('unavailable'));
+   assert.equal(await page.locator('#activityForm').isVisible(),false);
+   // Render-only fixture; does not claim authenticated persistence.
+   await page.evaluate(()=>window.spinFamilyHydrateCustomActivities([{name:'Dance party',category:'family'},...['chore','outdoor','family','selfcare'].map(category=>({name:'Custom '+category+' activity',category}))]));
    const dance=page.locator('#activityList .activity-tile').nth(20);await dance.scrollIntoViewIfNeeded();assert.equal(await dance.locator('img').getAttribute('src'),'assets/activities/dance-party.webp');await dance.locator('img').evaluate(i=>i.decode());
    const fallbacks={chore:'clean-the-kitchen',outdoor:'take-a-family-walk',family:'arts-and-crafts',selfcare:'quiet-reading'};
    for(const category of Object.keys(fallbacks)){
-    await page.locator('#activityName').fill('Custom '+category+' activity');await page.locator('#activityCategory').selectOption(category);await page.locator('#activityForm button[type="submit"]').click();
-    const card=page.locator('#activityList .activity-tile').last();await card.scrollIntoViewIfNeeded();assert.equal(await card.locator('img').getAttribute('src'),'assets/activities/'+fallbacks[category]+'.webp');assert.ok((await card.locator('img').getAttribute('alt')).startsWith('Representative'));await card.locator('img').evaluate(i=>i.decode());
+    const card=page.locator('#activityList .activity-tile').nth(21+Object.keys(fallbacks).indexOf(category));await card.scrollIntoViewIfNeeded();assert.equal(await card.locator('img').getAttribute('src'),'assets/activities/'+fallbacks[category]+'.webp');assert.ok((await card.locator('img').getAttribute('alt')).startsWith('Representative'));await card.locator('img').evaluate(i=>i.decode());
    }
    await page.screenshot({path:'qa-screenshots/custom-fallbacks-'+width+'.png',fullPage:true});
    // Deliberate asset failure, actual browser error events; no mocked app response.
+   await dance.scrollIntoViewIfNeeded();await dance.locator('img').evaluate(i=>i.loading='eager');
    await page.route('**/assets/activities/dance-party.webp*',r=>r.abort());await dance.locator('img').evaluate(i=>{i.src='assets/activities/dance-party.webp?failure=1';});
    await page.waitForFunction(()=>document.querySelectorAll('#activityList .activity-tile')[20].querySelector('img').getAttribute('src')==='assets/activities/arts-and-crafts.webp');
    await page.route('**/assets/activities/arts-and-crafts.webp*',r=>r.abort());await dance.locator('img').evaluate(i=>{i.src='assets/activities/arts-and-crafts.webp?failure=1';});

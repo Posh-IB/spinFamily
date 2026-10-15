@@ -1,46 +1,35 @@
 import security from '../../lib/request-security.cjs';
 import { getUser } from '@netlify/identity';
-import { getDatabase } from '@netlify/database';
 import moderation from '../../lib/activity-moderation.cjs';
-const { moderateActivity } = moderation;
-const {sameOriginMutation}=security;
+import {transaction} from '../../server/database.mjs';
 const respond=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
 export default async function handler(req){
  if(!['GET','POST'].includes(req.method))return respond({error:'method_not_allowed'},405);
- if(req.method==='POST'&&!sameOriginMutation(req))return respond({error:'invalid_origin'},403);
+ if(req.method==='POST'&&!security.sameOriginMutation(req))return respond({error:'invalid_origin'},403);
  let user;
  try{user=await getUser();}catch{return respond({error:'authentication_unavailable'},503);}
  if(!user?.id)return respond({error:'authentication_required'},401);
- let db;
- try{db=getDatabase();}catch{return respond({error:'database_unavailable'},503);}
- try{
-  const rows=await db.sql`SELECT h.id, s.status, s.current_period_end
-   FROM households h LEFT JOIN subscriptions s ON s.household_id=h.id
-   WHERE h.owner_subject=${user.id} LIMIT 1`;
-  const row=rows[0];
-  if(!row)return respond({error:'household_not_found'},403);
-  // Never authorize on a client claim, Stripe redirect, or expired local status.
-  const active=['active','trialing'].includes(row.status)&&
-    row.current_period_end&&new Date(row.current_period_end).getTime()>Date.now();
-  if(!active)return respond({error:'plus_required'},403);
-  if(req.method==='GET'){
-   const activities=await db.sql`SELECT id,name,category,duration_minutes,created_at
-     FROM custom_activities WHERE household_id=${row.id} ORDER BY created_at DESC LIMIT 100`;
-   return respond({activities});
-  }
+ let validation;
+ if(req.method==='POST'){
   const raw=await req.text();
   if(raw.length>4096)return respond({error:'payload_too_large'},413);
   let input;
   try{input=JSON.parse(raw);}catch{return respond({error:'invalid_json'},400);}
-  const validation=moderateActivity(input);
+  validation=moderation.moderateActivity(input);
   if(!validation.ok)return respond({error:validation.reason,policyVersion:validation.policyVersion},422);
-  const count=await db.sql`SELECT count(*)::int AS count FROM custom_activities WHERE household_id=${row.id}`;
-  if(count[0].count>=20)return respond({error:'activity_limit'},409);
-  const saved=await db.sql`INSERT INTO custom_activities
-   (household_id,name,category,duration_minutes,moderation_policy_version)
-   VALUES (${row.id},${validation.value.name},${validation.value.category},20,${validation.policyVersion})
-   RETURNING id,name,category,duration_minutes,created_at`;
-  return respond({activity:saved[0]},201);
- }catch{return respond({error:'service_unavailable'},503);}
+ }
+ try{return await transaction(async db=>{
+  const h=(await db.query('SELECT id FROM households WHERE owner_subject=$1 FOR UPDATE',[user.id])).rows[0];
+  if(!h)return respond({error:'household_not_found'},403);
+  const s=(await db.query('SELECT * FROM subscriptions WHERE household_id=$1 FOR UPDATE',[h.id])).rows[0];
+  const active=s?.verified_payment===true&&!s.terminal&&['active','trialing'].includes(s.status)&&s.current_period_end&&new Date(s.current_period_end)>new Date();
+  if(!active)return respond({error:'plus_required'},403);
+  if(req.method==='GET')return respond({activities:(await db.query('SELECT id,name,category,duration_minutes,created_at FROM custom_activities WHERE household_id=$1 ORDER BY created_at DESC LIMIT 20',[h.id])).rows});
+  const count=(await db.query('SELECT count(*)::int AS count FROM custom_activities WHERE household_id=$1',[h.id])).rows[0].count;
+  if(count>=20)return respond({error:'activity_limit'},409);
+  const saved=await db.query(`INSERT INTO custom_activities(household_id,name,category,duration_minutes,moderation_policy_version)
+    VALUES($1,$2,$3,20,$4) RETURNING id,name,category,duration_minutes,created_at`,[h.id,validation.value.name,validation.value.category,validation.policyVersion]);
+  return respond({activity:saved.rows[0]},201);
+ });}catch(error){if(error.code==='23514'&&error.message==='activity_limit')return respond({error:'activity_limit'},409);return respond({error:'service_unavailable'},503);}
 }
 export const config={path:'/api/household/activities',method:['GET','POST']};

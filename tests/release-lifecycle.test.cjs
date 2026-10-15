@@ -1,0 +1,71 @@
+'use strict';
+const {test,mock}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const url=process.env.DATABASE_TEST_URL;
+test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant isolation and revocation',{skip:!url},async()=>{
+ const {Pool}=require('pg');
+ const Stripe=require('stripe');
+ const db=new Pool({connectionString:url,max:40});
+ const schema='release_lifecycle';
+ await db.query(`CREATE SCHEMA ${schema}`);
+ const testUrl=new URL(url);testUrl.searchParams.set('options',`-c search_path=${schema}`);
+ const scoped=new Pool({connectionString:testUrl.href,max:40});
+ let user={id:'qa_a'},counter=0;
+ const env={STRIPE_SECRET_KEY:'sk_test_synthetic',STRIPE_WEBHOOK_SECRET:'whsec_synthetic',SPINFAMILY_PLUS_MONTHLY_PRICE_ID:'price_monthly',SPINFAMILY_PLUS_ANNUAL_PRICE_ID:'price_annual',SPINFAMILY_CHECKOUT_ORIGIN:'https://qa.example'};
+ globalThis.Netlify={env:{get:name=>env[name]}};
+ const ctx={deploy:{context:'deploy-preview'}};
+ const sessions=new Map(),subs=new Map(),keys=new Map();
+ const signatureSdk=new Stripe(env.STRIPE_SECRET_KEY);
+ class Provider {
+  webhooks=signatureSdk.webhooks;
+  customers={create:async(_args,{idempotencyKey})=>{if(!keys.has(idempotencyKey))keys.set(idempotencyKey,{id:'cus_'+(++counter)});return keys.get(idempotencyKey);}};
+  subscriptions={retrieve:async id=>structuredClone(subs.get(id)),list:async({customer})=>({data:[...subs.values()].filter(s=>s.customer===customer)})};
+  checkout={sessions:{retrieve:async id=>structuredClone(sessions.get(id)),create:async(args,{idempotencyKey})=>{
+   if(keys.has(idempotencyKey))return keys.get(idempotencyKey);
+   const session={id:'cs_'+(++counter),customer:args.customer,livemode:false,status:'open',mode:'subscription',url:'https://checkout.stripe.com/c/pay/test',expires_at:args.expires_at};
+   sessions.set(session.id,session);keys.set(idempotencyKey,session);return structuredClone(session);
+  }}};
+ }
+ mock.module('stripe',{defaultExport:Provider});
+ mock.module('@netlify/identity',{namedExports:{getUser:async()=>user}});
+ mock.module('@netlify/database',{namedExports:{getConnectionString:()=>testUrl.href}});
+ try{
+  for(const file of fs.readdirSync('netlify/database/migrations').sort())await scoped.query(fs.readFileSync('netlify/database/migrations/'+file,'utf8'));
+  const checkout=(await import('../netlify/functions/plus-checkout.mjs')).default;
+  const webhook=(await import('../netlify/functions/stripe-webhook.mjs')).default;
+  const activity=(await import('../netlify/functions/household-activities.mjs')).default;
+  const req=(path,body)=>new Request('https://qa.example'+path,{method:body?'POST':'GET',headers:{origin:'https://qa.example','content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+  const buy=()=>checkout(req('/api/billing/checkout',{period:'monthly',household_id:'forged'}),ctx);
+  user=null;assert.equal((await buy()).status,401);user={id:'qa_a'};
+  const concurrent=await Promise.all(Array.from({length:8},buy));
+  assert.deepEqual(concurrent.map(r=>r.status),Array(8).fill(201));
+  assert.equal(sessions.size,1,'only one payable session across concurrent requests');
+  assert.equal((await activity(req('/api/household/activities',{name:'Read together',category:'family'}))).status,403);
+  const session=[...sessions.values()][0];
+  const sub={id:'sub_qa_a',customer:session.customer,livemode:false,status:'active',items:{data:[{quantity:1,price:{id:'price_monthly'},current_period_end:Math.floor(Date.now()/1000)+86400}]},latest_invoice:{status:'open'}};
+  subs.set(sub.id,sub);session.subscription=sub.id;session.status='complete';session.payment_status='paid';
+  const event=(type='checkout.session.completed',id='evt_'+(++counter))=>({id,type,created:Math.floor(Date.now()/1000),livemode:false,data:{object:type.startsWith('checkout')?{id:session.id}:{id:sub.id,customer:sub.customer}}});
+  const deliver=async value=>{const payload=JSON.stringify(value);return webhook(new Request('https://qa.example/api/billing/stripe-webhook',{method:'POST',body:payload,headers:{'stripe-signature':signatureSdk.webhooks.generateTestHeaderString({payload,secret:env.STRIPE_WEBHOOK_SECRET})}}),ctx);};
+  assert.equal((await deliver(event())).status,200);
+  assert.equal((await activity(req('/api/household/activities'))).status,403,'active with unpaid latest invoice is denied');
+  sub.latest_invoice.status='paid';
+  const completed=event();assert.equal((await deliver(completed)).status,200);
+  assert.equal((await (await deliver(completed)).json()).duplicate,true);
+  assert.equal((await buy()).status,409,'no second checkout after paid subscription');
+  const blocked=await activity(req('/api/household/activities',{name:'f u c k this',category:'family'}));assert.equal(blocked.status,422);
+  const creates=await Promise.all(Array.from({length:28},(_,i)=>activity(req('/api/household/activities',{name:'Read together '+i,category:'family'}))));
+  assert.equal(creates.filter(r=>r.status===201).length,20);assert.equal(creates.filter(r=>r.status===409).length,8);
+  assert.equal((await (await activity(req('/api/household/activities'))).json()).activities.length,20);
+  user={id:'qa_b'};assert.equal((await activity(req('/api/household/activities'))).status,403);
+  user={id:'qa_a'};
+  sub.status='past_due';await deliver(event('customer.subscription.updated'));
+  assert.equal((await activity(req('/api/household/activities'))).status,403);
+  sub.status='active';sub.items.data[0].current_period_end=Math.floor(Date.now()/1000)-10;await deliver(event('customer.subscription.updated'));
+  assert.equal((await activity(req('/api/household/activities'))).status,403,'expired period denied');
+  sub.status='canceled';await deliver(event('customer.subscription.deleted'));
+  sub.status='active';sub.items.data[0].current_period_end=Math.floor(Date.now()/1000)+86400;await deliver(event('customer.subscription.updated'));
+  assert.equal((await activity(req('/api/household/activities'))).status,403,'terminal cancellation cannot resurrect');
+  const bad=await webhook(new Request('https://qa.example/api/billing/stripe-webhook',{method:'POST',body:'{}',headers:{'stripe-signature':'bad'}}),ctx);assert.equal(bad.status,400);
+ }finally{await scoped.end();await db.end();mock.restoreAll();delete globalThis.Netlify;}
+});
