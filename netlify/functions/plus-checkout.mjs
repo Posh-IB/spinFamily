@@ -47,18 +47,18 @@ export default async function handler(req,context){
    if(!customer){
     const created=await stripe.customers.create({}, {idempotencyKey:'spinfamily-customer-'+attempt.household_id});
     customer=created.id;
-    await db.query('INSERT INTO subscriptions(household_id,provider_customer_id,stripe_livemode) VALUES($1,$2,$3)',[attempt.household_id,customer,env.STRIPE_SECRET_KEY.startsWith('sk_live_')]);
+    await db.query('INSERT INTO subscriptions(household_id,provider_customer_id,stripe_livemode) VALUES($1,$2,$3)',[attempt.household_id,customer,policy.stripeLivemode(env.STRIPE_SECRET_KEY)]);
    }
    // Also inspect Stripe: a paid session may have completed while webhook
    // delivery is delayed. Never issue another subscription in that interval.
    const existing=await stripe.subscriptions.list({customer,status:'all',limit:100});
    if(existing.data.some(s=>!['canceled','incomplete_expired'].includes(s.status)))return respond({error:'subscription_exists_use_portal'},409);
    const session=current.provider_session_id?await stripe.checkout.sessions.retrieve(current.provider_session_id):
-    await stripe.checkout.sessions.create({mode:'subscription',customer,line_items:[{price,quantity:1}],
+    await stripe.checkout.sessions.create({mode:'subscription',integration_identifier:'spinfamily_plus_qmvkztrp',customer,line_items:[{price,quantity:1}],
      success_url:origin+'/?billing=return',cancel_url:origin+'/?billing=cancel',
      expires_at:Math.floor(new Date(current.expires_at).getTime()/1000)},
      {idempotencyKey:'spinfamily-checkout-'+current.attempt_id});
-   if(session.status!=='open'||session.customer!==customer||session.livemode!==env.STRIPE_SECRET_KEY.startsWith('sk_live_'))return respond({error:'checkout_not_open'},409);
+   if(session.status!=='open'||session.customer!==customer||session.livemode!==policy.stripeLivemode(env.STRIPE_SECRET_KEY))return respond({error:'checkout_not_open'},409);
    await db.query(`INSERT INTO billing_checkout_sessions(provider_session_id,household_id,provider_customer_id,provider_price_id,stripe_livemode)
     VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,[session.id,attempt.household_id,customer,price,session.livemode]);
    await db.query('UPDATE billing_checkout_attempts SET provider_session_id=$2 WHERE household_id=$1',[attempt.household_id,session.id]);

@@ -11,7 +11,7 @@
     "@netlify/database": "2.0.1",
     "@netlify/identity": "2.0.0",
     "pg": "8.23.1",
-    "stripe": "18.5.0"
+    "stripe": "23.0.0"
   },
   "devDependencies": {
     "esbuild": "0.25.12",
