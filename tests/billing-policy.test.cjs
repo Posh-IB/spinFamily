@@ -26,3 +26,14 @@ test('period end from subscription items and not client-provided timestamp',()=>
  assert.equal(parseStripePeriod(sub()).toISOString(),'2027-01-15T08:00:00.000Z');
  assert.equal(parseStripePeriod({items:{data:[]}}),null);
 });
+
+test('restricted keys preserve mode separation and subscription validation',()=>{
+ const restricted={...env,STRIPE_SECRET_KEY:'rk_test_ABCDEF01234'};
+ assert.equal(validConfig(restricted),true);
+ assert.equal(snapshot(sub(),restricted).livemode,false);
+ assert.equal(validConfig({...restricted,STRIPE_SECRET_KEY:'rk_live_ABCDEF01234'}),false);
+ const production={...restricted,STRIPE_SECRET_KEY:'rk_live_ABCDEF01234',CONTEXT:'production',SPINFAMILY_ENABLE_PRODUCTION_BILLING:'true'};
+ assert.equal(validConfig(production),true);
+ assert.equal(snapshot({...sub(),livemode:true},production).livemode,true);
+ assert.equal(validConfig({...env,STRIPE_SECRET_KEY:'pk_test_ABCDEF01234'}),false);
+});

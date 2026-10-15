@@ -16,7 +16,7 @@ export default async function handler(req,context){
  let event;
  try{event=stripe.webhooks.constructEvent(raw,signature,env.STRIPE_WEBHOOK_SECRET);}catch{return respond({error:'invalid_signature'},400);}
  if(!handled.has(event.type))return respond({received:true});
- const live=env.STRIPE_SECRET_KEY.startsWith('sk_live_');
+ const live=policy.stripeLivemode(env.STRIPE_SECRET_KEY);
  if(event.livemode!==live)return respond({error:'environment_mismatch'},400);
  let outcome='ignored_irrelevant';
  try{
