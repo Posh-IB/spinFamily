@@ -3,12 +3,13 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {allowedPrices,parseStripePeriod,snapshot,validConfig}=require('../lib/billing-policy.cjs');
 const env={STRIPE_SECRET_KEY:'sk_test_012345ABCDEF',STRIPE_WEBHOOK_SECRET:'whsec_012345ABCDEF',
  SPINFAMILY_PLUS_MONTHLY_PRICE_ID:'price_Monthly1',SPINFAMILY_PLUS_ANNUAL_PRICE_ID:'price_Annual22',CONTEXT:'deploy-preview'};
-const sub=(status='active')=>({id:'sub_ABC',customer:'cus_ABC',livemode:false,status,items:{data:[{price:{id:'price_Monthly1'},current_period_end:1800000000}]}});
+const sub=(status='active')=>({id:'sub_ABC',customer:'cus_ABC',livemode:false,status,items:{data:[{quantity:1,price:{id:'price_Monthly1'},current_period_end:1800000000}]}});
 test('preview refuses live key and production refuses accidental activation',()=>{
  assert.equal(validConfig(env),true);
  assert.equal(validConfig({...env,STRIPE_SECRET_KEY:'sk_live_ABCDEF01234'}),false);
  assert.equal(validConfig({...env,CONTEXT:'production'}),false);
- assert.equal(validConfig({...env,CONTEXT:'production',SPINFAMILY_ENABLE_PRODUCTION_BILLING:'true'}),true);
+ assert.equal(validConfig({...env,CONTEXT:'production',SPINFAMILY_ENABLE_PRODUCTION_BILLING:'true'}),false);
+ assert.equal(validConfig({...env,STRIPE_SECRET_KEY:'sk_live_ABCDEF01234',CONTEXT:'production',SPINFAMILY_ENABLE_PRODUCTION_BILLING:'true'}),true);
 });
 test('rejects unset or duplicate Stripe price mapping',()=>{
  assert.equal(validConfig({...env,SPINFAMILY_PLUS_ANNUAL_PRICE_ID:'price_Monthly1'}),false);

@@ -17,11 +17,12 @@ jobs:
           node-version: '22'
       - name: Install Playwright Chromium
         run: |
-          npm install --no-save --no-package-lock playwright@1.55.0
+          npm ci --no-audit --no-fund
+          npm run build
           npx playwright install --with-deps chromium
       - name: Browser and responsive smoke
         run: |
-          python3 -m http.server 4317 --bind 127.0.0.1 > /tmp/spinfamily-server.log 2>&1 &
+          python3 -m http.server 4317 --bind 127.0.0.1 --directory dist > /tmp/spinfamily-server.log 2>&1 &
           node - <<'NODE'
           const {chromium}=require('playwright');
           const fs=require('fs');fs.mkdirSync('qa-screenshots',{recursive:true});

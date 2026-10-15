@@ -1,3 +1,4 @@
+import {environment} from '../../server/database.mjs';
 import security from '../../lib/request-security.cjs';
 import { getUser } from '@netlify/identity';
 import { getDatabase } from '@netlify/database';
@@ -5,13 +6,13 @@ import Stripe from 'stripe';
 import policy from '../../lib/billing-policy.cjs';
 const {sameOriginMutation}=security;
 const respond=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
-export default async function handler(req){
+export default async function handler(req,context){
  if(req.method!=='POST')return respond({error:'method_not_allowed'},405);
  if(!sameOriginMutation(req))return respond({error:'invalid_origin'},403);
  let user;
  try{user=await getUser();}catch{return respond({error:'authentication_unavailable'},503);}
  if(!user?.id)return respond({error:'authentication_required'},401);
- const env=process.env, origin=env.SPINFAMILY_CHECKOUT_ORIGIN;
+ const env=environment(context), origin=env.SPINFAMILY_CHECKOUT_ORIGIN;
  if(!policy.validConfig(env)||!/^https:\/\/[^/]+$/.test(origin||''))return respond({error:'billing_not_configured'},503);
  try{
   const db=getDatabase();
