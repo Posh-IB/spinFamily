@@ -1,3 +1,4 @@
+import './tomorrow-client.js';
 import { signup, login, logout, getUser, handleAuthCallback, getSettings, oauthLogin } from '@netlify/identity';
 
 const byId = id => document.getElementById(id);
@@ -16,6 +17,7 @@ let activeUser = null, isPlus = false, checkoutReady=false, portalReady=false, g
 
 function message(value) { status.textContent = value; }
 function resetActivities() {
+  window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:null}));
   // Clearing a household's activities on logout prevents account crossover.
   window.spinFamilyHydrateCustomActivities?.([]);
 }
@@ -55,6 +57,7 @@ async function refresh() {
     if(epoch!==generation)return;
     isPlus=true;
     window.spinFamilyHydrateCustomActivities?.(data.activities||[]);
+    try { await loadHistory(); } catch { if(epoch===generation)window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:{error:'History is temporarily unavailable.'}})); }
     message('SpinFamily Plus is active. Your custom activities are saved to your household.');
   } catch (error) {
     if(epoch!==generation)return;
@@ -118,6 +121,57 @@ manage.addEventListener('click',async()=>{
   }catch{message('Subscription management is temporarily unavailable.');}
   finally{manage.disabled=false;}
 });
+async function loadHistory(){
+  if(!activeUser||!isPlus)return null;
+  const epoch=generation,subject=activeUser.id;
+  const data=await api('/api/household/plans');
+  if(epoch!==generation||!activeUser||!isPlus||activeUser.id!==subject)throw new Error('session_changed');
+  window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:data}));
+  return data;
+}
+window.spinFamilyHistory={
+  eligible:()=>Boolean(activeUser&&isPlus),
+  async planningChoices(){
+    if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation,data=await api('/api/household/suggestions');
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    return data;
+  },
+  async suggest(options){
+    if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation,data=await api('/api/household/suggestions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(options)});
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    return data;
+  },
+  refresh:loadHistory,
+  async accept(plan){
+    if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation;
+    const result=await api('/api/household/plans',{method:'POST',
+      headers:{'content-type':'application/json'},body:JSON.stringify({action:'accept',plan})});
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
+    return result;
+  },
+  async complete(id){
+    if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation;
+    const result=await api('/api/household/plans',{method:'POST',
+      headers:{'content-type':'application/json'},body:JSON.stringify({action:'complete',id})});
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
+    return result;
+  },
+  async remove(id){
+    if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation;
+    const result=await api('/api/household/plans',{method:'POST',
+      headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',id})});
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
+    return result;
+  }
+};
 window.spinFamilyPlus={
   async add(name,category){
     if(!activeUser||!isPlus)throw new Error('plus_required');
