@@ -25,7 +25,7 @@ function accountPanel(open,mode='signin'){
   openSignIn.setAttribute('aria-expanded',String(open));
   openCreate.setAttribute('aria-expanded',String(open));
   if(open){
-    message(mode==='signup'?'Create a free account to save your family's plans and streaks. No purchase required.':'Sign in to save your family progress. No purchase required.');
+    message(mode==='signup'?'Create a free account to save family plans and streaks. No purchase required.':'Sign in to save your family progress. No purchase required.');
     panel.scrollIntoView({behavior:'smooth',block:'nearest'});
     email.focus();
   }
