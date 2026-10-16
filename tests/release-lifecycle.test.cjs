@@ -44,12 +44,15 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const suggestions=(await import('../netlify/functions/household-suggestions.mjs')).default;
   const req=(path,body)=>new Request('https://qa.example'+path,{method:body?'POST':'GET',headers:{origin:'https://qa.example','content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
   const buy=()=>checkout(req('/api/billing/checkout',{period:'monthly',household_id:'forged'}),ctx);
-  user=null;assert.equal((await buy()).status,401);assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,401);user={id:'qa_a'};
+  user=null;assert.equal((await buy()).status,401);assert.equal((await history(req('/api/household/plans'))).status,401);assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,401);user={id:'qa_a'};
+  const freeStart=await history(req('/api/household/plans'));
+  assert.equal(freeStart.status,200,'new free signed-in account creates household without Stripe checkout');
+  assert.equal((await freeStart.json()).progress.completedPlans,0);
   const concurrent=await Promise.all(Array.from({length:8},buy));
   assert.deepEqual(concurrent.map(r=>r.status),Array(8).fill(201));
   assert.equal(sessions.size,1,'only one payable session across concurrent requests');
   assert.equal((await activity(req('/api/household/activities',{name:'Read together',category:'family'}))).status,403);
-  assert.equal((await history(req('/api/household/plans'))).status,403,'unpaid household cannot read saved history');
+  assert.equal((await history(req('/api/household/plans'))).status,200,'Free household history works without payment');
   const session=[...sessions.values()][0];
   const sub={id:'sub_qa_a',customer:session.customer,livemode:false,status:'active',items:{data:[{quantity:1,price:{id:'price_monthly'},current_period_end:Math.floor(Date.now()/1000)+86400}]},latest_invoice:{status:'open'}};
   subs.set(sub.id,sub);session.subscription=sub.id;session.status='complete';session.payment_status='paid';
@@ -119,7 +122,7 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   assert.equal(feedbackSeen.records.length,0,'deletion immediately removes recommendation input');
   sub.status='past_due';await deliver(event('customer.subscription.updated'));
   assert.equal((await activity(req('/api/household/activities'))).status,403);
-  assert.equal((await history(req('/api/household/plans'))).status,403,'entitlement revoked means history access revoked');
+  assert.equal((await history(req('/api/household/plans'))).status,200,'Plus cancellation does not revoke Free progress history');
   assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,403,'revocation also removes private engine access');
   sub.status='active';sub.items.data[0].current_period_end=Math.floor(Date.now()/1000)-10;await deliver(event('customer.subscription.updated'));
   assert.equal((await activity(req('/api/household/activities'))).status,403,'expired period denied');
