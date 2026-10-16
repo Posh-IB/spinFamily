@@ -56,7 +56,7 @@ async function refresh() {
     if(epoch!==generation)return;
     isPlus=true;
     window.spinFamilyHydrateCustomActivities?.(data.activities||[]);
-    try { await loadHistory(); } catch { window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:{error:'History is temporarily unavailable.'}})); }
+    try { await loadHistory(); } catch { if(epoch===generation)window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:{error:'History is temporarily unavailable.'}})); }
     message('SpinFamily Plus is active. Your custom activities are saved to your household.');
   } catch (error) {
     if(epoch!==generation)return;
@@ -122,7 +122,9 @@ manage.addEventListener('click',async()=>{
 });
 async function loadHistory(){
   if(!activeUser||!isPlus)return null;
+  const epoch=generation,subject=activeUser.id;
   const data=await api('/api/household/plans');
+  if(epoch!==generation||!activeUser||!isPlus||activeUser.id!==subject)throw new Error('session_changed');
   window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:data}));
   return data;
 }
