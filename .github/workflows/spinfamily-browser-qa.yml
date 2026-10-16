@@ -67,6 +67,8 @@ jobs:
         run: node tests/browser-history.cjs
       - name: Private suggestions UI with synthetic fixture and logout isolation
         run: node tests/browser-tomorrow.cjs
+      - name: Verify Free account entry and actionable registration across pages
+        run: node tests/browser-account-nav.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
