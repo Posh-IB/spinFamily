@@ -1,7 +1,7 @@
 name: SpinFamily actual browser smoke
 on:
   pull_request:
-    branches: [main]
+    branches: [main, work/household-completion-history-2026-10-16]
   push:
     branches: [work/original-app-premium-facelift-2026-10-11, work/cinematic-family-art-2026-10-11]
 permissions:
