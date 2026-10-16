@@ -9,7 +9,9 @@ test('participant follows between Home, Activities, and Family within one sessio
 });
 test('anonymous free session has no durable participant history or billing claims',()=>{
  assert.doesNotMatch(html,/(?:localStorage|sessionStorage)\.setItem/);
- assert.match(html,/Subscription checkout, accounts, and stored history are not active/);
+ assert.match(html,/Anonymous spins and two-hour suggestions are free/);
+ assert.match(html,/Signed-in Plus households can save selected plans/);
+ assert.match(html,/A selection never counts as a completion/);
 });
 test('wheel shadow rings remain horizontally centered',()=>{
  assert.match(html,/\.wheel\{margin:0 auto;transform-origin:50% 50%;box-shadow:/);
