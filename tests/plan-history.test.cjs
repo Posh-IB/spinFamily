@@ -43,3 +43,16 @@ test('duplicate completions same day yield one streak day; yesterday continues, 
  assert.equal(state.longestDailyStreakInSavedHistory,3);
  assert.equal(completionStatistics(a,'UTC',new Date('2026-10-18T16:00:00Z')).currentDailyStreak,0);
 });
+
+test('founder policy: full plan completion earns exactly one streak day, never an acceptance',()=>{
+ const day='2026-10-16T18:00:00.000Z';
+ const items=[{completedAt:day},{completedAt:'2026-10-16T20:00:00.000Z'},{completedAt:null}];
+ const stats=completionStatistics(items,'America/New_York',new Date('2026-10-16T21:00:00.000Z'));
+ assert.equal(stats.completedToday,true);
+ assert.equal(stats.completedPlans,2);
+ assert.equal(stats.completedDays,1);
+ assert.equal(stats.currentDailyStreak,1);
+ const onlyAccepted=completionStatistics([{completedAt:null}], 'America/New_York',new Date('2026-10-16T21:00:00Z'));
+ assert.equal(onlyAccepted.completedToday,false);
+ assert.equal(onlyAccepted.currentDailyStreak,0);
+});
