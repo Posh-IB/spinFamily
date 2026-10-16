@@ -46,9 +46,9 @@ export default async function handler(req){
   if(data.action==='accept'){
    const p=data.parsed;
    if(hh.history_timezone&&hh.history_timezone!==p.timezone)return fail('household_timezone_mismatch',409);
-   const previous=(await db.query('SELECT id,plan_data FROM saved_plans WHERE household_id=$1 AND client_plan_id=$2',[hh.id,p.id])).rows[0];
+   const previous=(await db.query('SELECT id,(plan_data=$3::jsonb) AS same FROM saved_plans WHERE household_id=$1 AND client_plan_id=$2',[hh.id,p.id,JSON.stringify(p.plan)])).rows[0];
    if(previous){
-    if(JSON.stringify(previous.plan_data)!==JSON.stringify(p.plan))return fail('plan_id_conflict',409);
+    if(!previous.same)return fail('plan_id_conflict',409);
    }else{
     const count=(await db.query('SELECT count(*)::int AS n FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL',[hh.id])).rows[0].n;
     if(count>=100)return fail('history_capacity_reached',409);
