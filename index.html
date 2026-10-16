@@ -515,7 +515,8 @@ window.addEventListener('spinfamily:history',event=>{
  const p=data.progress||{};
  summary.textContent='Completed plans: '+(p.completedPlans||0)+' · Completed days: '+(p.completedDays||0)+
   ' · Current daily streak (completed plan days): '+(p.currentDailyStreak||0)+
-  ' · Longest recorded streak: '+(p.longestDailyStreakInSavedHistory||0);
+  ' · Longest recorded streak: '+(p.longestDailyStreakInSavedHistory||0)+
+  (p.completedToday?' · Today counts! Come back tomorrow for more quality time.':' · Finish a plan together today; try a different activity mix tomorrow.');
  feed.textContent='';
  list.replaceChildren();
  if(!rows.length){list.textContent='No saved family plans yet. Spin and choose a plan to begin.';return;}
