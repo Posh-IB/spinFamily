@@ -49,6 +49,7 @@ async function refresh() {
   }
   updateControls();
   message('Signed in. Checking your SpinFamily Plus subscription…');
+  let subscriptionChecked=false;
   try {
     const data=await api('/api/household/activities');
     if(epoch!==generation)return;
@@ -57,9 +58,10 @@ async function refresh() {
     message('SpinFamily Plus is active. Your custom activities are saved to your household.');
   } catch (error) {
     if(epoch!==generation)return;
-    if(error.message==='plus_required'||error.message==='household_not_found')
+    if(error.message==='plus_required'||error.message==='household_not_found'){
+      subscriptionChecked=true;
       message('Signed in. Choose a SpinFamily Plus plan to save custom activities.');
-    else message('Subscription check is unavailable. Premium features are temporarily disabled.');
+    }else message('Subscription check is unavailable. Premium features are temporarily disabled.');
   }
   try{
     const ready=await api('/api/billing/status');
@@ -67,7 +69,7 @@ async function refresh() {
     checkoutReady=ready.checkoutReady===true;portalReady=ready.portalReady===true;
   }catch{}
   if(epoch!==generation)return;
-  if(!isPlus&&!checkoutReady)message('Signed in. Plus checkout is not available yet. Free activities remain available.');
+  if(subscriptionChecked&&!checkoutReady)message('Signed in. Plus checkout is not available yet. Free activities remain available.');
   updateControls();
 }
 async function authorize(action) {
