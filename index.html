@@ -186,6 +186,8 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 .activity-photo.image-unavailable .art-fallback{display:grid}
 .activity-photo img[hidden]{display:none}
   [hidden]{display:none!important}
+  #spinPage>#tomorrowPanel{grid-column:1/-1;grid-row:4}#spinPage>#progressPanel{grid-column:1/-1;grid-row:5}
+  #tomorrowPanel label{display:inline-block;margin:6px 10px 6px 0;font-size:13px}#tomorrowPanel input[type=time],#tomorrowPanel select{padding:7px;border:1px solid #b7d6d3;border-radius:9px;background:white}#tomorrowChoices>div{padding:9px 0;border-bottom:1px solid #dce9eb}#tomorrowChoices span{display:block;font-weight:700}#tomorrowGenerate{margin:12px 0;padding:10px 16px;border:0;border-radius:12px;background:#147d86;color:white;font-weight:700}
   .history-record{padding:12px 0;border-bottom:1px solid #dce9eb}.history-record p{margin:6px 0}.history-record button{margin-right:8px;margin-top:6px}
 </style>
 </head>
@@ -198,7 +200,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     <button data-page="familyPage"><span>♟</span>Family</button><button data-page="guidePage"><span>?</span>Guide</button>
     <button data-page="aboutPage"><span>☰</span>More</button>
   </nav>
-  <div class="prototype-note"><strong>Public prototype:</strong> the wheel selects a category; available curated activities are arranged into a two-hour schedule using estimated durations. This version does not use machine learning, cloud sync, weather data, or personalized recommendation models.</div>
+  <div class="prototype-note"><strong>Public prototype:</strong> the wheel selects a category; available curated activities are arranged into a two-hour schedule using estimated durations. Guest spins use curated activities. Plus completion history and private next-day suggestions are separate preview features; machine learning and weather data are not used.</div>
 
   <main id="spinPage" class="page active">
     <section class="welcome-hero"><p class="hero-kicker">WELCOME TO SPINFAMILY</p><h2>Make Tonight <em>Together</em> Matter</h2><p>One spin. A little less deciding. A lot more being together.</p></section>
@@ -227,6 +229,23 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <p class="small-note">Spin to choose your starting category. SpinFamily builds a two-hour plan from the current time, with bedtime last when included. Activity times are estimates; you choose whether to use the plan.</p>
     </section>
     <div id="acceptedStatus" class="status" role="status"></div>
+    <section class="card" id="tomorrowPanel" hidden aria-label="Tomorrow household suggestions">
+      <h3>A little variety for tomorrow</h3>
+      <p class="helper">Private preview · suggestions use caregiver-confirmed completed plans. At-home ideas use estimated durations, within your chosen window. Your routines and must-include choices stay protected. Variety never affects earned streak days.</p>
+      <label>Start <input id="tomorrowStart" type="time" value="18:00"></label>
+      <label>End <input id="tomorrowEnd" type="time" value="20:00"></label>
+      <label>Energy <select id="tomorrowEnergy"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></label>
+      <details><summary>Caregiver choices and a fixed commitment</summary>
+        <p class="helper">Exclusions are hard constraints. Routines and must-include activities repeat when you choose; conflicting choices return no plan. Suggestions contain up to three activities and may leave free time.</p>
+        <label>Commitment starts <input id="tomorrowFixedStart" type="time"></label>
+        <label>Commitment ends <input id="tomorrowFixedEnd" type="time"></label>
+        <div id="tomorrowChoices"></div>
+      </details>
+      <button type="button" id="tomorrowGenerate">Plan tomorrow</button>
+      <div id="tomorrowStatus" role="status" aria-live="polite"></div>
+      <div id="tomorrowResults"></div>
+      <p class="helper">Suggestions are for review. This preview does not save a tomorrow suggestion as a selected or completed plan.</p>
+    </section>
     <section class="card" id="progressPanel" hidden aria-label="Saved household activity history">
       <h3>Our family progress</h3>
       <p id="progressSummary" aria-live="polite">Your saved plans will appear here.</p>

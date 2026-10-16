@@ -1,0 +1,108 @@
+[
+  {
+    "id": "a_c1b62c732dcd924a817d6f5c61706d1c",
+    "title": "Clean the kitchen",
+    "category": "chore",
+    "durationMin": 20,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_04f7eb6e73f5c2f5293047c500925dc7",
+    "title": "Fold a laundry load",
+    "category": "chore",
+    "durationMin": 15,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_cc8ea86512a585908c95cc9b866766cb",
+    "title": "Organize toys",
+    "category": "chore",
+    "durationMin": 20,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_680a82dda0e2c5b4b0a7e29ca4964de8",
+    "title": "Wipe counters",
+    "category": "chore",
+    "durationMin": 10,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_9c059bf4c728ca1b46d60714a19912d5",
+    "title": "Quick room reset",
+    "category": "chore",
+    "durationMin": 15,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_e0eeb68d9757e9df916e3ad7dff5d14b",
+    "title": "Cook together",
+    "category": "chore",
+    "durationMin": 40,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_7e7f43e8b2c994830c92fb10df28ea1c",
+    "title": "Play a board game",
+    "category": "family",
+    "durationMin": 45,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_28b272ef65760701d4aa62b44855eba2",
+    "title": "Read a story together",
+    "category": "family",
+    "durationMin": 25,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_ac5c10119b6f684f407365f285875a9b",
+    "title": "Arts and crafts",
+    "category": "family",
+    "durationMin": 35,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_c7755ecf813fdca2680765d71c6946db",
+    "title": "Journal or draw",
+    "category": "family",
+    "durationMin": 20,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_e82baf2331ba669784460c9f22a14144",
+    "title": "Quiet reading",
+    "category": "selfcare",
+    "durationMin": 30,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_b11887a364544a1cf196119bb19f0b83",
+    "title": "Family breathing break",
+    "category": "selfcare",
+    "durationMin": 15,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_54b9e5051dd294e16658de43101ea7e9",
+    "title": "Wind-down bath",
+    "category": "selfcare",
+    "durationMin": 30,
+    "locationMode": "home"
+  },
+  {
+    "id": "a_7f13f33bdf50be9f4ff4f70a4c374667",
+    "title": "Early bedtime routine",
+    "category": "selfcare",
+    "durationMin": 45,
+    "locationMode": "home",
+    "bedtime": true
+  },
+  {
+    "id": "a_d0ad3284fee2fd0d854b5f9d4df373e4",
+    "title": "Family movie night",
+    "category": "selfcare",
+    "durationMin": 90,
+    "locationMode": "home"
+  }
+]
