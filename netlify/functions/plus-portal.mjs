@@ -20,7 +20,9 @@ export default async function handler(req,context){
     INNER JOIN households h ON h.id=s.household_id WHERE h.owner_subject=${user.id}`;
   if(!rows[0]?.provider_customer_id)return respond({error:'billing_account_not_found'},404);
   const stripe=new Stripe(env.STRIPE_SECRET_KEY);
-  const session=await stripe.billingPortal.sessions.create({customer:rows[0].provider_customer_id,return_url:origin+'/'});
+  const configuration=env.SPINFAMILY_PORTAL_CONFIGURATION_ID;
+  if(env.CONTEXT==='production' && !/^bpc_[A-Za-z0-9]+$/.test(configuration||''))return respond({error:'portal_configuration_missing'},503);
+  const session=await stripe.billingPortal.sessions.create({customer:rows[0].provider_customer_id,return_url:origin+'/',...(configuration?{configuration}:{})});
   return respond({url:session.url});
  }catch{return respond({error:'billing_portal_unavailable'},503);}
 }
