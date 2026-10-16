@@ -241,7 +241,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     <section class="card">
       <div class="participant-context" aria-label="Current family participant">
         <span class="participant-avatar" id="activityParticipantAvatar" aria-hidden="true">👩</span>
-        <div class="participant-copy"><strong id="activityParticipantName">Choosing with Mom</strong><small>Anonymous session · No activity history saved</small></div>
+        <div class="participant-copy"><strong id="activityParticipantName">Choosing with Mom</strong><small>Family role is temporary · Plus history belongs to your household</small></div>
         <label class="participant-switch"><span>Change</span><select id="activityParticipantSelect" aria-label="Change participant">
           <option value="Mom">Mom</option><option value="Dad">Dad</option><option value="Emma">Emma</option><option value="Lucas">Lucas</option>
         </select></label>
@@ -273,7 +273,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 
   <main id="familyPage" class="page">
     <section class="page-hero family-hero"><div class="page-heading"><p class="hero-kicker">TOGETHER IS BETTER</p><h2>Our Family</h2><p>Every family looks different. Every moment matters.</p></div></section>
-    <section class="card family-space"><h3>Who's helping choose tonight?</h3><p>Choose a family role for this anonymous session. It follows you between Home, Activities and Family, but resets when the app reloads. Paid household profiles and saved activity history are planned, not active.</p>
+    <section class="card family-space"><h3>Who's helping choose tonight?</h3><p>Choose a family role for this session. The role resets on reload. Plus household plan history is separate and never profiles individual children.</p>
       <div class="family-options"><button type="button" data-family-member="Mom">👩 <span>Mom</span></button><button type="button" data-family-member="Dad">👨 <span>Dad</span></button><button type="button" data-family-member="Emma">👧 <span>Emma</span></button><button type="button" data-family-member="Lucas">👦 <span>Lucas</span></button></div>
       <p class="family-selection" id="familySelection" role="status">Currently choosing: Mom</p>
     </section>
@@ -285,7 +285,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
   </main>
 
   <main id="aboutPage" class="page about">
-    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free now · Saved family history later</h3><p>Anonymous spins, session participants, and two-hour activity suggestions are free. Your selections and activities are not stored after this page is refreshed. A paid household subscription is planned for caregiver-managed profiles, saved activity history, favorites, and history-informed variety. Subscription checkout, accounts, and stored history are not active in this public prototype.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Cloud accounts or cross-device sync</li><li>Weather-aware suggestions</li><li>Validated streak or variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
+    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free spins · Plus household history</h3><p>Anonymous spins and two-hour suggestions are free. Signed-in Plus households can save selected plans, mark them complete explicitly, revisit their history, and remove records. A selection never counts as a completion; progress is derived only from caregiver-confirmed completions.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Full caregiver-managed member profiles</li><li>Weather-aware suggestions</li><li>Validated activity-by-activity progress and variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
   </main>
 
 
