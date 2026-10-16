@@ -14,7 +14,7 @@ export async function transaction(fn) {
   finally { client.release(); }
 }
 export function environment(context) {
-  const names=['STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET','SPINFAMILY_PLUS_MONTHLY_PRICE_ID','SPINFAMILY_PLUS_ANNUAL_PRICE_ID','SPINFAMILY_CHECKOUT_ORIGIN','SPINFAMILY_ENABLE_PRODUCTION_BILLING'];
+  const names=['STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET','SPINFAMILY_PLUS_MONTHLY_PRICE_ID','SPINFAMILY_PLUS_ANNUAL_PRICE_ID','SPINFAMILY_CHECKOUT_ORIGIN','SPINFAMILY_ENABLE_PRODUCTION_BILLING','SPINFAMILY_PORTAL_CONFIGURATION_ID'];
   const env=Object.fromEntries(names.map(name=>[name,globalThis.Netlify?.env.get(name)]));
   env.CONTEXT=context?.deploy?.context;
   if(env.CONTEXT==='production'){
