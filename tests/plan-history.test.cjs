@@ -29,7 +29,7 @@ test('acceptances do not count toward completion or streaks',()=>{
   {created_at:'2026-10-16T18:00:00Z',completed_at:null}
  ];
  assert.deepEqual(completionStatistics(records,'America/New_York',new Date('2026-10-16T19:00:00Z')),
- {acceptedPlans:2,completedPlans:1,completedDays:1,currentDailyStreak:1,longestDailyStreakInSavedHistory:1});
+ {acceptedPlans:2,completedPlans:1,completedDays:1,completedToday:false,currentDailyStreak:1,longestDailyStreakInSavedHistory:1});
 });
 test('duplicate completions same day yield one streak day; yesterday continues, gap resets',()=>{
  const finished=days=>days.map(x=>({completedAt:x,created_at:x}));
@@ -38,6 +38,7 @@ test('duplicate completions same day yield one streak day; yesterday continues, 
  const state=completionStatistics(a,'UTC',new Date('2026-10-16T16:00:00Z'));
  assert.equal(state.completedPlans,4);
  assert.equal(state.completedDays,3);
+ assert.equal(state.completedToday,false);
  assert.equal(state.currentDailyStreak,3);
  assert.equal(state.longestDailyStreakInSavedHistory,3);
  assert.equal(completionStatistics(a,'UTC',new Date('2026-10-18T16:00:00Z')).currentDailyStreak,0);
