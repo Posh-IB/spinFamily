@@ -186,7 +186,8 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 .activity-photo.image-unavailable .art-fallback{display:grid}
 .activity-photo img[hidden]{display:none}
   [hidden]{display:none!important}
-  </style>
+  .history-record{padding:12px 0;border-bottom:1px solid #dce9eb}.history-record p{margin:6px 0}.history-record button{margin-right:8px;margin-top:6px}
+</style>
 </head>
 <body>
 <div class="app">
@@ -226,6 +227,13 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <p class="small-note">Spin to choose your starting category. SpinFamily builds a two-hour plan from the current time, with bedtime last when included. Activity times are estimates; you choose whether to use the plan.</p>
     </section>
     <div id="acceptedStatus" class="status" role="status"></div>
+    <section class="card" id="progressPanel" hidden aria-label="Saved household activity history">
+      <h3>Our family progress</h3>
+      <p id="progressSummary" aria-live="polite">Your saved plans will appear here.</p>
+      <div id="historyFeedback" role="status" aria-live="polite"></div>
+      <div id="historyList"></div>
+      <p class="helper">Only caregiver-confirmed completions count. Your saved history belongs to your signed-in Plus household.</p>
+    </section>
   </main>
 
   <main id="activitiesPage" class="page">
@@ -295,7 +303,7 @@ const defaults={
   selfcare:[['📖','Quiet reading',30],['🧘','Family breathing break',15],['🛁','Wind-down bath',30],['😴','Early bedtime routine',45],['🎬','Family movie night',90]]
 };
 const labels={chore:'At Home',outdoor:'Out & About',family:'Creative',selfcare:'Relax & Unwind'};
-let custom=[];let currentMember='Mom';let currentPlan=[];let rotation=0;
+let custom=[];let currentMember='Mom';let currentPlan=[];let currentAnchor=null;let currentPlanRecordId=null;let rotation=0;
 const prohibited=[/\bfuck\b/i,/\bshit\b/i,/\bbitch\b/i,/\bcocaine\b/i,/\bheroin\b/i,/\bmeth\b/i,/\bporn\b/i];
 const $=id=>document.getElementById(id);
 function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
@@ -364,6 +372,8 @@ function generatePlan(anchor){
 }
 function showResults(anchor){
  const plan=generatePlan(anchor);
+ currentAnchor=anchor;
+ currentPlanRecordId=plan?crypto.randomUUID():null;
  if(!plan){$('acceptedStatus').textContent='No two-hour combination fits '+labels[anchor]+'. Try another spin.';$('acceptedStatus').classList.add('show');return;}
  $('resultSubtitle').textContent=currentMember+' choosing · '+formatClock(plan[0].start)+' – '+formatClock(plan[plan.length-1].end)+' · 2-hour plan';
  $('whyText').textContent='Why this plan: The wheel landed on '+labels[anchor]+'. This schedule includes that category, totals exactly 120 minutes using curated activity estimates, and keeps bedtime last when included. You decide whether to use it. No weather, live availability, or personalized AI is used.';
@@ -477,7 +487,71 @@ document.querySelectorAll('[data-family-member]').forEach(button=>button.addEven
 $('activityParticipantSelect').addEventListener('change',event=>selectParticipant(event.target.value));
 document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>switchPage(button.dataset.page,button)));
 selectParticipant(currentMember);
-$('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',()=>{$('results').classList.remove('open');$('acceptedStatus').textContent='Plan selected for tonight. This prototype does not record completion, streaks, or long-term history yet.';$('acceptedStatus').classList.add('show');});$('activityForm').addEventListener('submit',addActivity);document.addEventListener('keydown',e=>{if(e.key==='Escape')$('results').classList.remove('open');});renderActivities();
+$('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',async()=>{
+ $('results').classList.remove('open');
+ const plan=currentPlan.map(x=>({name:x.name,category:x.category,durationMinutes:x.duration}));
+ const record={id:currentPlanRecordId,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC',
+   anchorCategory:currentAnchor,activities:plan};
+ $('acceptedStatus').classList.add('show');
+ if(!window.spinFamilyHistory?.eligible()){
+  $('acceptedStatus').textContent='Plan selected for tonight. Guest selections are not saved; sign in to Plus to keep completion history.';
+  return;
+ }
+ $('acceptedStatus').textContent='Saving your selected plan…';
+ try{
+  await window.spinFamilyHistory.accept(record);
+  $('acceptedStatus').textContent='Plan saved. Mark it complete from Our family progress after you finish the activities.';
+ }catch{
+  $('acceptedStatus').textContent='The plan could not be saved. No completion has been recorded. Please retry.';
+ }
+});
+window.addEventListener('spinfamily:history',event=>{
+ const panel=$('progressPanel'),feed=$('historyFeedback'),list=$('historyList'),summary=$('progressSummary');
+ const data=event.detail;
+ if(!data){panel.hidden=true;list.replaceChildren();return;}
+ panel.hidden=false;
+ if(data.error){summary.textContent=data.error;list.replaceChildren();return;}
+ const rows=Array.isArray(data.records)?data.records:[];
+ const p=data.progress||{};
+ summary.textContent='Completed plans: '+(p.completedPlans||0)+' · Completed days: '+(p.completedDays||0)+
+  ' · Current daily streak (completed plan days): '+(p.currentDailyStreak||0)+
+  ' · Longest recorded streak: '+(p.longestDailyStreakInSavedHistory||0);
+ feed.textContent='';
+ list.replaceChildren();
+ if(!rows.length){list.textContent='No saved family plans yet. Spin and choose a plan to begin.';return;}
+ rows.forEach(row=>{
+  const item=document.createElement('article');item.className='history-record';
+  const title=document.createElement('strong');
+  const names=(row.plan?.activities||[]).map(x=>x.name).join(' • ');
+  title.textContent=names||'Family plan';
+  const meta=document.createElement('p');meta.className='helper';
+  meta.textContent=(row.status==='completed'?'Completed: '+new Date(row.completedAt).toLocaleString():
+    'Selected: '+new Date(row.acceptedAt).toLocaleString()+' · Not marked complete');
+  item.append(title,meta);
+  if(row.status!=='completed'){
+   const button=document.createElement('button');button.type='button';
+   button.textContent='Mark plan complete';button.dataset.historyAction='complete';button.dataset.planId=row.id;
+   item.append(button);
+  }
+  const remove=document.createElement('button');remove.type='button';
+  remove.textContent='Delete record';remove.dataset.historyAction='delete';remove.dataset.planId=row.id;
+  item.append(remove);list.append(item);
+ });
+});
+$('historyList').addEventListener('click',async event=>{
+ const button=event.target.closest('button[data-history-action]');
+ if(!button||button.disabled)return;
+ const {historyAction:action,planId:id}=button.dataset;
+ if(action==='delete'&&!window.confirm('Permanently delete this saved family plan and its completion history?'))return;
+ button.disabled=true;
+ try{
+  if(action==='complete')await window.spinFamilyHistory.complete(id);
+  else await window.spinFamilyHistory.remove(id);
+  $('historyFeedback').textContent=action==='complete'?'Completion saved.':'Plan record deleted.';
+ }catch{
+  $('historyFeedback').textContent='Your change was not saved. Please retry.';
+ }finally{button.disabled=false;}
+});$('activityForm').addEventListener('submit',addActivity);document.addEventListener('keydown',e=>{if(e.key==='Escape')$('results').classList.remove('open');});renderActivities();
 </script>
 <script type="module" src="assets/plus-client.js"></script>
 </body>
