@@ -16,7 +16,7 @@ const manage = byId('plusManage');
 const openSignIn = byId('accountOpenSignIn');
 const openCreate = byId('accountOpenCreate');
 const membershipText = byId('accountMembershipText');
-let authBusy = false;
+let authBusy = false, signupAllowed = true;
 let activeUser = null, isPlus = false, checkoutReady=false, portalReady=false, generation=0;
 
 function message(value) { status.textContent = value; }
@@ -47,7 +47,8 @@ function updateControls() {
   byId('activityForm').hidden = !isPlus;
   membershipText.textContent=!authenticated?'Guest · Progress is not saved':isPlus?'Plus household · Progress saved':'Free household · Progress saved';
   openSignIn.hidden=authenticated;
-  openCreate.hidden=authenticated;
+  openCreate.hidden=authenticated || !signupAllowed;
+  signUp.hidden=!signupAllowed;
   signIn.disabled=authBusy;signUp.disabled=authBusy;
 }
 async function api(path,options={}) {
@@ -214,9 +215,9 @@ window.spinFamilyPlus={
 (async()=>{
   try{
     const settings=await getSettings();
-    signUp.hidden=Boolean(settings.disableSignup);
-    openCreate.hidden=Boolean(settings.disableSignup);
-    if(settings.disableSignup)message('Free registration is currently closed by the identity provider. Existing accounts can still sign in.');
+    signupAllowed=!Boolean(settings.disableSignup);
+    updateControls();
+    if(!signupAllowed)message('Free registration is currently closed by the identity provider. Existing accounts can still sign in.');
     for(const [provider,enabled] of Object.entries(settings.providers||{})){
       if(!enabled||provider==='email')continue;
       const button=document.createElement('button');button.type='button';
