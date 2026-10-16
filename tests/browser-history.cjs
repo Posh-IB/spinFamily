@@ -8,6 +8,7 @@ const assert=require('node:assert/strict');
    const page=await browser.newPage({viewport:{width,height:850},reducedMotion:'reduce'});
    const errors=[];page.on('pageerror',e=>errors.push(e.message));
    await page.goto('http://127.0.0.1:4317/',{waitUntil:'domcontentloaded'});
+   await page.waitForFunction(()=>document.querySelector('#plusAccountStatus').textContent.includes('unavailable'));
    await page.evaluate(()=>{
     window.__qa={accepted:0,completed:0,deleted:0,last:null};
     const state={timezone:'UTC',records:[],progress:{acceptedPlans:0,completedPlans:0,completedDays:0,currentDailyStreak:0,longestDailyStreakInSavedHistory:0}};
