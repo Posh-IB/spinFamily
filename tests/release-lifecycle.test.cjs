@@ -84,8 +84,16 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const creates=await Promise.all(Array.from({length:28},(_,i)=>activity(req('/api/household/activities',{name:'Read together '+i,category:'family'}))));
   assert.equal(creates.filter(r=>r.status===201).length,20);assert.equal(creates.filter(r=>r.status===409).length,8);
   assert.equal((await (await activity(req('/api/household/activities'))).json()).activities.length,20);
-  user={id:'qa_b'};assert.equal((await activity(req('/api/household/activities'))).status,403);
-  assert.equal((await history(req('/api/household/plans'))).status,403,'household B cannot read household A history');
+  await scoped.query("INSERT INTO account_profiles(identity_subject) VALUES('qa_b')");
+  const bHouse=(await scoped.query("INSERT INTO households(owner_subject) VALUES('qa_b') RETURNING id")).rows[0].id;
+  await scoped.query("INSERT INTO subscriptions(household_id,provider_customer_id,stripe_livemode,status,verified_payment,current_period_end) VALUES($1,'cus_b',false,'active',true,now()+interval '1 day')",[bHouse]);
+  user={id:'qa_b'};
+  assert.equal((await activity(req('/api/household/activities'))).status,200,'B has separate eligible membership');
+  const bHistory=await history(req('/api/household/plans'));
+  assert.equal(bHistory.status,200);
+  assert.equal((await bHistory.json()).records.length,0,'B must not read A records');
+  assert.equal((await history(req('/api/household/plans',{action:'complete',id:planId}))).status,404,'B cannot complete A plan');
+  assert.equal((await history(req('/api/household/plans',{action:'delete',id:planId}))).status,404,'B cannot delete A plan');
   user={id:'qa_a'};
   assert.equal((await history(req('/api/household/plans',{action:'delete',id:planId}))).status,200);
   assert.equal((await (await history(req('/api/household/plans'))).json()).records.length,0,'deletion removes saved record');
