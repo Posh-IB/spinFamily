@@ -13,9 +13,25 @@ const signOut = byId('plusSignOut');
 const monthly = byId('plusMonthly');
 const annual = byId('plusAnnual');
 const manage = byId('plusManage');
+const openSignIn = byId('accountOpenSignIn');
+const openCreate = byId('accountOpenCreate');
+const membershipText = byId('accountMembershipText');
+let authBusy = false;
 let activeUser = null, isPlus = false, checkoutReady=false, portalReady=false, generation=0;
 
 function message(value) { status.textContent = value; }
+function accountPanel(open,mode='signin'){
+  panel.hidden=!open;
+  openSignIn.setAttribute('aria-expanded',String(open));
+  openCreate.setAttribute('aria-expanded',String(open));
+  if(open){
+    message(mode==='signup'?'Create a free account to save your family's plans and streaks. No purchase required.':'Sign in to save your family progress. No purchase required.');
+    panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+    email.focus();
+  }
+}
+openSignIn.addEventListener('click',()=>accountPanel(true,'signin'));
+openCreate.addEventListener('click',()=>accountPanel(true,'signup'));
 function resetActivities() {
   window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:null}));
   // Clearing a household's activities on logout prevents account crossover.
@@ -29,6 +45,10 @@ function updateControls() {
   annual.hidden = !authenticated || isPlus || !checkoutReady;
   manage.hidden = !authenticated || !portalReady;
   byId('activityForm').hidden = !isPlus;
+  membershipText.textContent=!authenticated?'Guest · Progress is not saved':isPlus?'Plus household · Progress saved':'Free household · Progress saved';
+  openSignIn.hidden=authenticated;
+  openCreate.hidden=authenticated;
+  signIn.disabled=authBusy;signUp.disabled=authBusy;
 }
 async function api(path,options={}) {
   const response=await fetch(path,{credentials:'same-origin',cache:'no-store',...options});
@@ -46,24 +66,25 @@ async function refresh() {
   isPlus=false;
   resetActivities();
   if(!activeUser) {
-    message('Guest mode: the family wheel and curated activities remain free. Sign in for SpinFamily Plus.');
+    message('Guest mode: the wheel is free. Create a free account to save family progress.');
     updateControls();return;
   }
   updateControls();
-  message('Signed in. Checking your SpinFamily Plus subscription…');
+  message('Signed in. Loading your saved family progress…');
+  try{await loadHistory();}catch{if(epoch===generation)window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:{error:'Saved progress is temporarily unavailable.'}}));}
+  if(epoch!==generation)return;
   let subscriptionChecked=false;
   try {
     const data=await api('/api/household/activities');
     if(epoch!==generation)return;
     isPlus=true;
     window.spinFamilyHydrateCustomActivities?.(data.activities||[]);
-    try { await loadHistory(); } catch { if(epoch===generation)window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:{error:'History is temporarily unavailable.'}})); }
     message('SpinFamily Plus is active. Your custom activities are saved to your household.');
   } catch (error) {
     if(epoch!==generation)return;
     if(error.message==='plus_required'||error.message==='household_not_found'){
       subscriptionChecked=true;
-      message('Signed in. Choose a SpinFamily Plus plan to save custom activities.');
+      message('Free account active. Your plans, completions and streaks can be saved. Plus adds custom activities.');
     }else message('Subscription check is unavailable. Premium features are temporarily disabled.');
   }
   try{
@@ -72,30 +93,38 @@ async function refresh() {
     checkoutReady=ready.checkoutReady===true;portalReady=ready.portalReady===true;
   }catch{}
   if(epoch!==generation)return;
-  if(subscriptionChecked&&!checkoutReady)message('Signed in. Plus checkout is not available yet. Free activities remain available.');
+  if(subscriptionChecked&&!checkoutReady)message('Free account active. Progress saving is free; Plus checkout is temporarily unavailable.');
   updateControls();
 }
 async function authorize(action) {
+  if(authBusy)return;
   const address=email.value.trim(),secret=password.value;
-  if(!address||!secret)return;
-  message('Processing account request…');
+  if(!email.reportValidity())return message('Enter a valid email address to '+(action==='signup'?'create your free account.':'sign in.'));
+  if(!password.reportValidity())return message('Enter a password of at least 8 characters.');
+  if(!address||!secret)return message('Email and password are required.');
+  authBusy=true;updateControls();message(action==='signup'?'Creating your free account…':'Signing in…');
   try{
     if(action==='signup'){
       await signup(address,secret);
-      message('Check your email for an account confirmation, then sign in.');
+      password.value='';
+      message('Account request submitted. If confirmation is required, check your email before signing in.');
       return;
     }
     await login(address,secret);
     password.value='';
     await refresh();
-  }catch{message('Account request failed. Check your details or try again.');}
+    accountPanel(false);
+  }catch(error){
+    const msg=String(error?.message||'').slice(0,180);
+    message((action==='signup'?'Account creation failed: ':'Sign-in failed: ')+(msg||'Check your details or try again.'));
+  }finally{authBusy=false;updateControls();}
 }
 signIn.addEventListener('click',()=>authorize('login'));
 signUp.addEventListener('click',()=>authorize('signup'));
 authForm.addEventListener('submit',event=>{event.preventDefault();authorize('login');});
 signOut.addEventListener('click',async()=>{
   ++generation;activeUser=null;isPlus=false;checkoutReady=false;portalReady=false;resetActivities();updateControls();
-  try{await logout();activeUser=null;isPlus=false;resetActivities();updateControls();message('Signed out. Guest mode is available.');}
+  try{await logout();activeUser=null;isPlus=false;resetActivities();updateControls();message('Signed out. Guest mode is available, or sign in to save progress.');}
   catch{message('Sign-out did not complete. Please retry.');}
 });
 for(const [button,period] of [[monthly,'monthly'],[annual,'annual']]){
@@ -122,15 +151,15 @@ manage.addEventListener('click',async()=>{
   finally{manage.disabled=false;}
 });
 async function loadHistory(){
-  if(!activeUser||!isPlus)return null;
+  if(!activeUser)return null;
   const epoch=generation,subject=activeUser.id;
   const data=await api('/api/household/plans');
-  if(epoch!==generation||!activeUser||!isPlus||activeUser.id!==subject)throw new Error('session_changed');
+  if(epoch!==generation||!activeUser||activeUser.id!==subject)throw new Error('session_changed');
   window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:data}));
   return data;
 }
 window.spinFamilyHistory={
-  eligible:()=>Boolean(activeUser&&isPlus),
+  eligible:()=>Boolean(activeUser),
   async planningChoices(){
     if(!activeUser||!isPlus)throw new Error('plus_required');
     const epoch=generation,data=await api('/api/household/suggestions');
@@ -145,29 +174,29 @@ window.spinFamilyHistory={
   },
   refresh:loadHistory,
   async accept(plan){
-    if(!activeUser||!isPlus)throw new Error('plus_required');
+    if(!activeUser)throw new Error('authentication_required');
     const epoch=generation;
     const result=await api('/api/household/plans',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'accept',plan})});
-    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    if(epoch!==generation||!activeUser)throw new Error('session_changed');
     window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
     return result;
   },
   async complete(id){
-    if(!activeUser||!isPlus)throw new Error('plus_required');
+    if(!activeUser)throw new Error('authentication_required');
     const epoch=generation;
     const result=await api('/api/household/plans',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'complete',id})});
-    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    if(epoch!==generation||!activeUser)throw new Error('session_changed');
     window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
     return result;
   },
   async remove(id){
-    if(!activeUser||!isPlus)throw new Error('plus_required');
+    if(!activeUser)throw new Error('authentication_required');
     const epoch=generation;
     const result=await api('/api/household/plans',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',id})});
-    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    if(epoch!==generation||!activeUser)throw new Error('session_changed');
     window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
     return result;
   }
@@ -185,7 +214,9 @@ window.spinFamilyPlus={
 (async()=>{
   try{
     const settings=await getSettings();
-    signUp.hidden=settings.disableSignup;
+    signUp.hidden=Boolean(settings.disableSignup);
+    openCreate.hidden=Boolean(settings.disableSignup);
+    if(settings.disableSignup)message('Free registration is currently closed by the identity provider. Existing accounts can still sign in.');
     for(const [provider,enabled] of Object.entries(settings.providers||{})){
       if(!enabled||provider==='email')continue;
       const button=document.createElement('button');button.type='button';
