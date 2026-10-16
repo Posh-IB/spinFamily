@@ -1,3 +1,4 @@
+import './tomorrow-client.js';
 import { signup, login, logout, getUser, handleAuthCallback, getSettings, oauthLogin } from '@netlify/identity';
 
 const byId = id => document.getElementById(id);
@@ -130,6 +131,18 @@ async function loadHistory(){
 }
 window.spinFamilyHistory={
   eligible:()=>Boolean(activeUser&&isPlus),
+  async planningChoices(){
+    if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation,data=await api('/api/household/suggestions');
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    return data;
+  },
+  async suggest(options){
+    if(!activeUser||!isPlus)throw new Error('plus_required');
+    const epoch=generation,data=await api('/api/household/suggestions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(options)});
+    if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    return data;
+  },
   refresh:loadHistory,
   async accept(plan){
     if(!activeUser||!isPlus)throw new Error('plus_required');

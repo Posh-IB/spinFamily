@@ -11,7 +11,8 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
  await db.query(`CREATE SCHEMA ${schema}`);
  const testUrl=new URL(url);testUrl.searchParams.set('options',`-c search_path=${schema}`);
  const scoped=new Pool({connectionString:testUrl.href,max:40});
- let user={id:'qa_a'},counter=0;
+ let user={id:'qa_a'},counter=0,feedbackSeen=null;
+ const actualEngine=process.env.SPIN_QA_PRIVATE_MODULE?await import(process.env.SPIN_QA_PRIVATE_MODULE):null;
  const env={STRIPE_SECRET_KEY:'sk_test_synthetic',STRIPE_WEBHOOK_SECRET:'whsec_synthetic',SPINFAMILY_PLUS_MONTHLY_PRICE_ID:'price_monthly',SPINFAMILY_PLUS_ANNUAL_PRICE_ID:'price_annual',SPINFAMILY_CHECKOUT_ORIGIN:'https://qa.example'};
  globalThis.Netlify={env:{get:name=>env[name]}};
  const ctx={deploy:{context:'deploy-preview'}};
@@ -27,6 +28,10 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
    sessions.set(session.id,session);keys.set(idempotencyKey,session);return structuredClone(session);
   }}};
  }
+ mock.module('../server/private-personalization.mjs',{namedExports:{requestPrivateSuggestions:async input=>{
+   feedbackSeen=structuredClone(input.feedback);if(actualEngine)return actualEngine.suggestNextDay(input);const a=input.catalog[0];
+   return {schemaVersion:1,feedbackVersion:1,status:'OK',plans:[{entries:[{activityId:a.id,start:1080,end:1080+a.durationMin}]}]};
+  }}});
  mock.module('stripe',{defaultExport:Provider});
  mock.module('@netlify/identity',{namedExports:{getUser:async()=>user}});
  mock.module('@netlify/database',{namedExports:{getConnectionString:()=>testUrl.href}});
@@ -36,9 +41,10 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const webhook=(await import('../netlify/functions/stripe-webhook.mjs')).default;
   const activity=(await import('../netlify/functions/household-activities.mjs')).default;
   const history=(await import('../netlify/functions/household-plans.mjs')).default;
+  const suggestions=(await import('../netlify/functions/household-suggestions.mjs')).default;
   const req=(path,body)=>new Request('https://qa.example'+path,{method:body?'POST':'GET',headers:{origin:'https://qa.example','content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
   const buy=()=>checkout(req('/api/billing/checkout',{period:'monthly',household_id:'forged'}),ctx);
-  user=null;assert.equal((await buy()).status,401);user={id:'qa_a'};
+  user=null;assert.equal((await buy()).status,401);assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,401);user={id:'qa_a'};
   const concurrent=await Promise.all(Array.from({length:8},buy));
   assert.deepEqual(concurrent.map(r=>r.status),Array(8).fill(201));
   assert.equal(sessions.size,1,'only one payable session across concurrent requests');
@@ -67,8 +73,17 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   assert.equal(before.progress.acceptedPlans,1);
   assert.equal(before.progress.completedPlans,0,'acceptance must never imply completion');
   assert.equal(before.progress.currentDailyStreak,0);
+  assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,200);
+  assert.equal(feedbackSeen.records.length,0,'selection cannot influence private ranking');
+  assert.equal((await suggestions(req('/api/household/suggestions',{history:[]}),ctx)).status,422,'forged history rejected');
+  assert.equal((await suggestions(req('/api/household/suggestions',{}),{deploy:{context:'production'}})).status,503,'controlled gate is disabled in production');
   const complete=()=>history(req('/api/household/plans',{action:'complete',id:planId}));
   assert.equal((await complete()).status,200);
+  assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,200);
+  assert.equal(feedbackSeen.records.length,1);
+  assert.equal(feedbackSeen.records[0].state,'completed');
+  assert.equal(Object.hasOwn(feedbackSeen,'householdId'),false);
+
   assert.equal((await complete()).status,200,'repeating completion must retain first timestamp');
   const after=(await (await history(req('/api/household/plans'))).json());
   assert.equal(after.progress.completedPlans,1);
@@ -92,14 +107,20 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const bHistory=await history(req('/api/household/plans'));
   assert.equal(bHistory.status,200);
   assert.equal((await bHistory.json()).records.length,0,'B must not read A records');
+  await scoped.query("UPDATE households SET history_timezone='America/New_York' WHERE id=$1",[bHouse]);
+  assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,200);
+  assert.equal(feedbackSeen.records.length,0,'B cannot use A completion feedback');
   assert.equal((await history(req('/api/household/plans',{action:'complete',id:planId}))).status,404,'B cannot complete A plan');
   assert.equal((await history(req('/api/household/plans',{action:'delete',id:planId}))).status,404,'B cannot delete A plan');
   user={id:'qa_a'};
   assert.equal((await history(req('/api/household/plans',{action:'delete',id:planId}))).status,200);
   assert.equal((await (await history(req('/api/household/plans'))).json()).records.length,0,'deletion removes saved record');
+  assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,200);
+  assert.equal(feedbackSeen.records.length,0,'deletion immediately removes recommendation input');
   sub.status='past_due';await deliver(event('customer.subscription.updated'));
   assert.equal((await activity(req('/api/household/activities'))).status,403);
   assert.equal((await history(req('/api/household/plans'))).status,403,'entitlement revoked means history access revoked');
+  assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,403,'revocation also removes private engine access');
   sub.status='active';sub.items.data[0].current_period_end=Math.floor(Date.now()/1000)-10;await deliver(event('customer.subscription.updated'));
   assert.equal((await activity(req('/api/household/activities'))).status,403,'expired period denied');
   sub.status='canceled';await deliver(event('customer.subscription.deleted'));

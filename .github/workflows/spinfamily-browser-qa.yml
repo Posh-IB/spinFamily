@@ -65,6 +65,8 @@ jobs:
         run: node tests/browser-activity-art.cjs
       - name: Preview only — mock authenticated history UI at mobile and desktop widths
         run: node tests/browser-history.cjs
+      - name: Private suggestions UI with synthetic fixture and logout isolation
+        run: node tests/browser-tomorrow.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
