@@ -35,6 +35,7 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const checkout=(await import('../netlify/functions/plus-checkout.mjs')).default;
   const webhook=(await import('../netlify/functions/stripe-webhook.mjs')).default;
   const activity=(await import('../netlify/functions/household-activities.mjs')).default;
+  const history=(await import('../netlify/functions/household-plans.mjs')).default;
   const req=(path,body)=>new Request('https://qa.example'+path,{method:body?'POST':'GET',headers:{origin:'https://qa.example','content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
   const buy=()=>checkout(req('/api/billing/checkout',{period:'monthly',household_id:'forged'}),ctx);
   user=null;assert.equal((await buy()).status,401);user={id:'qa_a'};
@@ -42,6 +43,7 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   assert.deepEqual(concurrent.map(r=>r.status),Array(8).fill(201));
   assert.equal(sessions.size,1,'only one payable session across concurrent requests');
   assert.equal((await activity(req('/api/household/activities',{name:'Read together',category:'family'}))).status,403);
+  assert.equal((await history(req('/api/household/plans'))).status,403,'unpaid household cannot read saved history');
   const session=[...sessions.values()][0];
   const sub={id:'sub_qa_a',customer:session.customer,livemode:false,status:'active',items:{data:[{quantity:1,price:{id:'price_monthly'},current_period_end:Math.floor(Date.now()/1000)+86400}]},latest_invoice:{status:'open'}};
   subs.set(sub.id,sub);session.subscription=sub.id;session.status='complete';session.payment_status='paid';
@@ -53,14 +55,43 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const completed=event();assert.equal((await deliver(completed)).status,200);
   assert.equal((await (await deliver(completed)).json()).duplicate,true);
   assert.equal((await buy()).status,409,'no second checkout after paid subscription');
+  const planId='32c92000-080a-4a1d-8714-d194246bdde9';
+  const planned={id:planId,timezone:'America/New_York',anchorCategory:'family',
+   activities:[{name:'Read a story together',category:'family',durationMinutes:45},
+    {name:'Visit the park',category:'outdoor',durationMinutes:45},
+    {name:'Quiet reading',category:'selfcare',durationMinutes:30}]};
+  const save=()=>history(req('/api/household/plans',{action:'accept',plan:planned}));
+  assert.equal((await save()).status,200,'accepted plan saved');
+  assert.equal((await save()).status,200,'repeating accept is idempotent');
+  const before=(await (await history(req('/api/household/plans'))).json());
+  assert.equal(before.progress.acceptedPlans,1);
+  assert.equal(before.progress.completedPlans,0,'acceptance must never imply completion');
+  assert.equal(before.progress.currentDailyStreak,0);
+  const complete=()=>history(req('/api/household/plans',{action:'complete',id:planId}));
+  assert.equal((await complete()).status,200);
+  assert.equal((await complete()).status,200,'repeating completion must retain first timestamp');
+  const after=(await (await history(req('/api/household/plans'))).json());
+  assert.equal(after.progress.completedPlans,1);
+  assert.equal(after.records[0].status,'completed');
+  assert.ok(after.records[0].completedAt);
+  assert.equal((await history(req('/api/household/plans',{action:'complete',id:'11111111-1111-4111-8111-111111111111'}))).status,404,'unaccepted plan cannot be completed');
+  assert.equal((await history(req('/api/household/plans',{action:'accept',plan:{...planned,id:'425094a1-12d4-4919-9343-4f4de37b9f99',timezone:'UTC'}}))).status,409,'household timezone must be consistent');
+  const doneAt=after.records[0].completedAt;
+  assert.equal((await complete()).status,200);
+  assert.equal((await (await history(req('/api/household/plans'))).json()).records[0].completedAt,doneAt,'duplicate click cannot replace completion timestamp');
+
   const blocked=await activity(req('/api/household/activities',{name:'f u c k this',category:'family'}));assert.equal(blocked.status,422);
   const creates=await Promise.all(Array.from({length:28},(_,i)=>activity(req('/api/household/activities',{name:'Read together '+i,category:'family'}))));
   assert.equal(creates.filter(r=>r.status===201).length,20);assert.equal(creates.filter(r=>r.status===409).length,8);
   assert.equal((await (await activity(req('/api/household/activities'))).json()).activities.length,20);
   user={id:'qa_b'};assert.equal((await activity(req('/api/household/activities'))).status,403);
+  assert.equal((await history(req('/api/household/plans'))).status,403,'household B cannot read household A history');
   user={id:'qa_a'};
+  assert.equal((await history(req('/api/household/plans',{action:'delete',id:planId}))).status,200);
+  assert.equal((await (await history(req('/api/household/plans'))).json()).records.length,0,'deletion removes saved record');
   sub.status='past_due';await deliver(event('customer.subscription.updated'));
   assert.equal((await activity(req('/api/household/activities'))).status,403);
+  assert.equal((await history(req('/api/household/plans'))).status,403,'entitlement revoked means history access revoked');
   sub.status='active';sub.items.data[0].current_period_end=Math.floor(Date.now()/1000)-10;await deliver(event('customer.subscription.updated'));
   assert.equal((await activity(req('/api/household/activities'))).status,403,'expired period denied');
   sub.status='canceled';await deliver(event('customer.subscription.deleted'));
