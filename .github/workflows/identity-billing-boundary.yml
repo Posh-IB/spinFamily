@@ -29,6 +29,7 @@ jobs:
         run: npm test
       - name: Check ESM handler syntax
         run: |
+          node --check netlify/functions/account-session.mjs
           node --check netlify/functions/household-activities.mjs
           node --check netlify/functions/plus-checkout.mjs
           node --check netlify/functions/plus-portal.mjs

@@ -69,6 +69,8 @@ jobs:
         run: node tests/browser-tomorrow.cjs
       - name: Verify Free account entry and actionable registration across pages
         run: node tests/browser-account-nav.cjs
+      - name: Rejected, unknown and successful logout session reconciliation
+        run: node tests/browser-logout-state.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
