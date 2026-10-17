@@ -16,7 +16,8 @@ const manage = byId('plusManage');
 const openSignIn = byId('accountOpenSignIn');
 const openCreate = byId('accountOpenCreate');
 const membershipText = byId('accountMembershipText');
-let authBusy = false, signupAllowed = true;
+let authBusy = false, signupAllowed = true, logoutBusy = false, sessionUncertain = false;
+const sessionReady=()=>Boolean(activeUser)&&!logoutBusy&&!sessionUncertain;
 let activeUser = null, isPlus = false, checkoutReady=false, portalReady=false, generation=0;
 
 function message(value) { status.textContent = value; }
@@ -25,9 +26,9 @@ function accountPanel(open,mode='signin'){
   openSignIn.setAttribute('aria-expanded',String(open));
   openCreate.setAttribute('aria-expanded',String(open));
   if(open){
-    message(mode==='signup'?'Create a free account to save family plans and streaks. No purchase required.':'Sign in to save your family progress. No purchase required.');
+    if(!activeUser&&!sessionUncertain)message(mode==='signup'?'Create a free account to save family plans and streaks. No purchase required.':'Sign in to save your family progress. No purchase required.');
     panel.scrollIntoView({behavior:'smooth',block:'nearest'});
-    email.focus();
+    (activeUser||sessionUncertain?signOut:email).focus();
   }
 }
 openSignIn.addEventListener('click',()=>accountPanel(true,'signin'));
@@ -38,15 +39,18 @@ function resetActivities() {
   window.spinFamilyHydrateCustomActivities?.([]);
 }
 function updateControls() {
-  const authenticated = Boolean(activeUser);
+  const authenticated = Boolean(activeUser)||sessionUncertain;
   authForm.hidden = authenticated;
   signOut.hidden = !authenticated;
   monthly.hidden = !authenticated || isPlus || !checkoutReady;
   annual.hidden = !authenticated || isPlus || !checkoutReady;
   manage.hidden = !authenticated || !portalReady;
   byId('activityForm').hidden = !isPlus;
-  membershipText.textContent=!authenticated?'Guest · Progress is not saved':isPlus?'Plus household · Progress saved':'Free household · Progress saved';
-  openSignIn.hidden=authenticated;
+  signOut.disabled=logoutBusy||authBusy;
+  membershipText.textContent=logoutBusy?'Signing out…':sessionUncertain?'Session could not be verified':!authenticated?'Guest · Progress is not saved':isPlus?'Plus household · Progress saved':'Free household · Progress saved';
+  openSignIn.hidden=false;
+  openSignIn.textContent=authenticated?'Account':'Sign in';
+  openSignIn.disabled=logoutBusy;
   openCreate.hidden=authenticated || !signupAllowed;
   signUp.hidden=!signupAllowed;
   signIn.disabled=authBusy;signUp.disabled=authBusy;
@@ -62,7 +66,7 @@ async function refresh() {
   const epoch=++generation;
   const user=await getUser();
   if(epoch!==generation)return;
-  activeUser=user;
+  activeUser=user;sessionUncertain=false;
   checkoutReady=false;portalReady=false;
   isPlus=false;
   resetActivities();
@@ -98,7 +102,7 @@ async function refresh() {
   updateControls();
 }
 async function authorize(action) {
-  if(authBusy)return;
+  if(authBusy||logoutBusy||sessionUncertain)return;
   const address=email.value.trim(),secret=password.value;
   if(!email.reportValidity())return message('Enter a valid email address to '+(action==='signup'?'create your free account.':'sign in.'));
   if(!password.reportValidity())return message('Enter a password of at least 8 characters.');
@@ -124,9 +128,33 @@ signIn.addEventListener('click',()=>authorize('login'));
 signUp.addEventListener('click',()=>authorize('signup'));
 authForm.addEventListener('submit',event=>{event.preventDefault();authorize('login');});
 signOut.addEventListener('click',async()=>{
-  ++generation;activeUser=null;isPlus=false;checkoutReady=false;portalReady=false;resetActivities();updateControls();
-  try{await logout();activeUser=null;isPlus=false;resetActivities();updateControls();message('Signed out. Guest mode is available, or sign in to save progress.');}
-  catch{message('Sign-out did not complete. Please retry.');}
+  if(logoutBusy||authBusy)return;
+  const epoch=++generation;
+  logoutBusy=true;sessionUncertain=true;isPlus=false;checkoutReady=false;portalReady=false;
+  resetActivities();updateControls();message('Signing out…');
+  try{
+    await logout();
+    if(epoch!==generation)return;
+    activeUser=null;sessionUncertain=false;
+    message('Signed out. Guest mode is available, or sign in to save progress.');
+  }catch{
+    // A rejected provider request does not establish that either session ended.
+    try{
+      const [user,server]=await Promise.all([getUser(),api('/api/account/session')]);
+      if(epoch!==generation)return;
+      if(!user&&!server.authenticated){
+        activeUser=null;sessionUncertain=false;
+        message('Signed out. Guest mode is available, or sign in to save progress.');
+      }else if(user&&server.authenticated&&server.subject===user.id){
+        activeUser=user;sessionUncertain=false;
+        // Keep requests disabled until fresh household authorization is restored.
+        await refresh();
+        message('Sign-out did not complete. You are still signed in. Please retry.');
+      }else message('Sign-out did not complete. Session status could not be verified. Please retry.');
+    }catch{sessionUncertain=true;isPlus=false;resetActivities();message('Sign-out did not complete. Session status could not be verified. Please retry.');}
+  }finally{
+    logoutBusy=false;updateControls();
+  }
 });
 for(const [button,period] of [[monthly,'monthly'],[annual,'annual']]){
  button.addEventListener('click',async()=>{
@@ -152,7 +180,7 @@ manage.addEventListener('click',async()=>{
   finally{manage.disabled=false;}
 });
 async function loadHistory(){
-  if(!activeUser)return null;
+  if(!activeUser||sessionUncertain)return null;
   const epoch=generation,subject=activeUser.id;
   const data=await api('/api/household/plans');
   if(epoch!==generation||!activeUser||activeUser.id!==subject)throw new Error('session_changed');
@@ -160,22 +188,22 @@ async function loadHistory(){
   return data;
 }
 window.spinFamilyHistory={
-  eligible:()=>Boolean(activeUser),
+  eligible:sessionReady,
   async planningChoices(){
-    if(!activeUser||!isPlus)throw new Error('plus_required');
+    if(!sessionReady()||!isPlus)throw new Error('plus_required');
     const epoch=generation,data=await api('/api/household/suggestions');
     if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
     return data;
   },
   async suggest(options){
-    if(!activeUser||!isPlus)throw new Error('plus_required');
+    if(!sessionReady()||!isPlus)throw new Error('plus_required');
     const epoch=generation,data=await api('/api/household/suggestions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(options)});
     if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
     return data;
   },
   refresh:loadHistory,
   async accept(plan){
-    if(!activeUser)throw new Error('authentication_required');
+    if(!sessionReady())throw new Error('authentication_required');
     const epoch=generation;
     const result=await api('/api/household/plans',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'accept',plan})});
@@ -184,7 +212,7 @@ window.spinFamilyHistory={
     return result;
   },
   async complete(id){
-    if(!activeUser)throw new Error('authentication_required');
+    if(!sessionReady())throw new Error('authentication_required');
     const epoch=generation;
     const result=await api('/api/household/plans',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'complete',id})});
@@ -193,7 +221,7 @@ window.spinFamilyHistory={
     return result;
   },
   async remove(id){
-    if(!activeUser)throw new Error('authentication_required');
+    if(!sessionReady())throw new Error('authentication_required');
     const epoch=generation;
     const result=await api('/api/household/plans',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',id})});
@@ -204,7 +232,7 @@ window.spinFamilyHistory={
 };
 window.spinFamilyPlus={
   async add(name,category){
-    if(!activeUser||!isPlus)throw new Error('plus_required');
+    if(!sessionReady()||!isPlus)throw new Error('plus_required');
     const epoch=generation;
     const data=await api('/api/household/activities',{method:'POST',
       headers:{'content-type':'application/json'},body:JSON.stringify({name,category})});
