@@ -12,6 +12,8 @@ test('anonymous free session has no durable participant history or billing claim
  assert.match(html,/Anonymous spins and two-hour suggestions are free/);
  assert.match(html,/Signed-in Free and Plus households can save selected plans/);
  assert.match(html,/A selection never counts as a completion/);
+ assert.match(html,/Guest selections are not saved; create a Free account or sign in to save future plans and completion history/);
+ assert.doesNotMatch(html,/sign in to Plus to keep completion history/i);
 });
 test('wheel shadow rings remain horizontally centered',()=>{
  assert.match(html,/\.wheel\{margin:0 auto;transform-origin:50% 50%;box-shadow:/);
