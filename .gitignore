@@ -1,7 +1,12 @@
 node_modules/
+.npm-cache/
+qa-screenshots/
 dist/
 .netlify/
 .env
 .env.*
 !\.env.example
 browser-evidence/
+
+.pw-browsers/
+.qa/

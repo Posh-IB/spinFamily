@@ -1,7 +1,7 @@
 name: SpinFamily actual browser smoke
 on:
   pull_request:
-    branches: [main]
+    branches: [main, work/household-completion-history-2026-10-16]
   push:
     branches: [work/original-app-premium-facelift-2026-10-11, work/cinematic-family-art-2026-10-11]
 permissions:
@@ -63,6 +63,14 @@ jobs:
         run: node tests/browser-participant-wheel.cjs
       - name: Verify individual artwork, cropping and custom fallbacks
         run: node tests/browser-activity-art.cjs
+      - name: Preview only — mock authenticated history UI at mobile and desktop widths
+        run: node tests/browser-history.cjs
+      - name: Private suggestions UI with synthetic fixture and logout isolation
+        run: node tests/browser-tomorrow.cjs
+      - name: Verify Free account entry and actionable registration across pages
+        run: node tests/browser-account-nav.cjs
+      - name: Rejected, unknown and successful logout session reconciliation
+        run: node tests/browser-logout-state.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
