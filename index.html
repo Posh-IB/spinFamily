@@ -189,6 +189,18 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
   #spinPage>#tomorrowPanel{grid-column:1/-1;grid-row:4}#spinPage>#progressPanel{grid-column:1/-1;grid-row:5}
   #tomorrowPanel label{display:inline-block;margin:6px 10px 6px 0;font-size:13px}#tomorrowPanel input[type=time],#tomorrowPanel select{padding:7px;border:1px solid #b7d6d3;border-radius:9px;background:white}#tomorrowChoices>div{padding:9px 0;border-bottom:1px solid #dce9eb}#tomorrowChoices span{display:block;font-weight:700}#tomorrowGenerate{margin:12px 0;padding:10px 16px;border:0;border-radius:12px;background:#147d86;color:white;font-weight:700}
   .history-record{padding:12px 0;border-bottom:1px solid #dce9eb}.history-record p{margin:6px 0}.history-record button{margin-right:8px;margin-top:6px}
+
+    /* Global account access remains present on Home, Activities, Family, Guide and More. */
+    .account-bar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:10px 15px 0;padding:10px 12px;border:1px solid #cde4df;border-radius:14px;background:#fffefa}
+    #accountMembershipText{font-size:12px;font-weight:800;color:#145269}
+    .account-bar-actions{display:flex;gap:7px;flex-wrap:wrap}
+    .account-bar-actions button{cursor:pointer;border-radius:11px;padding:8px 10px;background:#fff;border:1px solid #80b8b3;color:#13555a;font:inherit;font-weight:800;font-size:12px}
+    #accountOpenCreate{background:#147d86;color:#fff;border-color:#147d86}
+    #plusAccountPanel{max-width:600px;margin:10px 15px;padding:16px}
+    #plusAccountPanel .add-form{max-width:480px}
+    #plusAccountPanel button:disabled{opacity:.6;cursor:wait}
+    .account-bar button:focus-visible,#plusAccountPanel button:focus-visible{outline:3px solid #f58469;outline-offset:2px}
+
 </style>
 </head>
 <body>
@@ -200,7 +212,30 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     <button data-page="familyPage"><span>♟</span>Family</button><button data-page="guidePage"><span>?</span>Guide</button>
     <button data-page="aboutPage"><span>☰</span>More</button>
   </nav>
-  <div class="prototype-note"><strong>Public prototype:</strong> the wheel selects a category; available curated activities are arranged into a two-hour schedule using estimated durations. Guest spins use curated activities. Plus completion history and private next-day suggestions are separate preview features; machine learning and weather data are not used.</div>
+  <section class="account-bar" aria-label="Family account access">
+    <span id="accountMembershipText" role="status" aria-live="polite">Guest · Progress is not saved</span>
+    <div class="account-bar-actions">
+      <button id="accountOpenSignIn" type="button" aria-controls="plusAccountPanel" aria-expanded="false">Sign in</button>
+      <button id="accountOpenCreate" type="button" aria-controls="plusAccountPanel" aria-expanded="false">Create free account</button>
+    </div>
+  </section>
+  <section class="card" id="plusAccountPanel" aria-label="SpinFamily membership and account" hidden>
+  <h3>Family account</h3>
+  <p id="plusAccountStatus" role="status" aria-live="polite">Checking account services…</p>
+  <form id="plusAuthForm" class="add-form">
+    <input id="plusEmail" type="email" autocomplete="email" required placeholder="Email address" aria-label="Email address">
+    <input id="plusPassword" type="password" autocomplete="current-password" required minlength="8" placeholder="Password" aria-label="Password">
+    <button id="plusSignIn" type="submit">Sign in</button>
+    <button id="plusSignUp" type="button">Create free account</button>
+  </form>
+  <button id="plusSignOut" type="button" hidden>Sign out</button>
+  <button id="plusMonthly" type="button" hidden>Plus monthly — $4.99</button>
+  <button id="plusAnnual" type="button" hidden>Plus yearly — $49</button>
+  <button id="plusManage" type="button" hidden>Manage subscription</button>
+  <p class="helper">Guest: enjoy the free wheel. A free account saves household plan progress and streaks. Plus adds verified paid features, including custom activities.</p>
+</section>
+
+  <div class="prototype-note"><strong>Public prototype:</strong> the wheel selects a category; available curated activities are arranged into a two-hour schedule using estimated durations. Guest spins use curated activities. Free account completion history and paid Plus private next-day suggestions are separate preview features; machine learning and weather data are not used.</div>
 
   <main id="spinPage" class="page active">
     <section class="welcome-hero"><p class="hero-kicker">WELCOME TO SPINFAMILY</p><h2>Make Tonight <em>Together</em> Matter</h2><p>One spin. A little less deciding. A lot more being together.</p></section>
@@ -251,7 +286,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <p id="progressSummary" aria-live="polite">Your saved plans will appear here.</p>
       <div id="historyFeedback" role="status" aria-live="polite"></div>
       <div id="historyList"></div>
-      <p class="helper">Only caregiver-confirmed completions count. Your saved history belongs to your signed-in Plus household.</p>
+      <p class="helper">Only caregiver-confirmed completions count. Your saved history belongs to your signed-in household.</p>
     </section>
   </main>
 
@@ -260,7 +295,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     <section class="card">
       <div class="participant-context" aria-label="Current family participant">
         <span class="participant-avatar" id="activityParticipantAvatar" aria-hidden="true">👩</span>
-        <div class="participant-copy"><strong id="activityParticipantName">Choosing with Mom</strong><small>Family role is temporary · Plus history belongs to your household</small></div>
+        <div class="participant-copy"><strong id="activityParticipantName">Choosing with Mom</strong><small>Family role is temporary · Signed-in household history stays private</small></div>
         <label class="participant-switch"><span>Change</span><select id="activityParticipantSelect" aria-label="Change participant">
           <option value="Mom">Mom</option><option value="Dad">Dad</option><option value="Emma">Emma</option><option value="Lucas">Lucas</option>
         </select></label>
@@ -272,21 +307,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
         <select id="activityCategory" aria-label="Activity category"><option value="chore">Chores</option><option value="outdoor">Outdoor</option><option value="family">Family</option><option value="selfcare">Self Care</option></select>
         <button type="submit">Save custom activity</button>
       </form>
-      <section class="card" id="plusAccountPanel" aria-label="SpinFamily Plus account">
-  <h3>SpinFamily Plus</h3>
-  <p id="plusAccountStatus" role="status" aria-live="polite">Checking account services…</p>
-  <form id="plusAuthForm" class="add-form">
-    <input id="plusEmail" type="email" autocomplete="email" required placeholder="Email address" aria-label="Email address">
-    <input id="plusPassword" type="password" autocomplete="current-password" required minlength="8" placeholder="Password" aria-label="Password">
-    <button id="plusSignIn" type="submit">Sign in</button>
-    <button id="plusSignUp" type="button">Create account</button>
-  </form>
-  <button id="plusSignOut" type="button" hidden>Sign out</button>
-  <button id="plusMonthly" type="button" hidden>Plus monthly — $4.99</button>
-  <button id="plusAnnual" type="button" hidden>Plus yearly — $49</button>
-  <button id="plusManage" type="button" hidden>Manage subscription</button>
-  <p class="helper">The family wheel and curated activities are free. A verified Plus subscription is required to save custom activities.</p>
-</section>
+      
     </section>
   </main>
 
@@ -304,7 +325,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
   </main>
 
   <main id="aboutPage" class="page about">
-    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free spins · Plus household history</h3><p>Anonymous spins and two-hour suggestions are free. Signed-in Plus households can save selected plans, mark them complete explicitly, revisit their history, and remove records. A selection never counts as a completion; progress is derived only from caregiver-confirmed completions.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Full caregiver-managed member profiles</li><li>Weather-aware suggestions</li><li>Validated activity-by-activity progress and variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
+    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free accounts · Saved family progress</h3><p>Anonymous spins and two-hour suggestions are free. Signed-in Free and Plus households can save selected plans, mark them complete explicitly, revisit their history, and remove records. A selection never counts as a completion; progress is derived only from caregiver-confirmed completions.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Full caregiver-managed member profiles</li><li>Weather-aware suggestions</li><li>Validated activity-by-activity progress and variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
   </main>
 
 
@@ -513,7 +534,7 @@ $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('clic
    anchorCategory:currentAnchor,activities:plan};
  $('acceptedStatus').classList.add('show');
  if(!window.spinFamilyHistory?.eligible()){
-  $('acceptedStatus').textContent='Plan selected for tonight. Guest selections are not saved; sign in to Plus to keep completion history.';
+  $('acceptedStatus').textContent='Plan selected for tonight. Guest selections are not saved; create a Free account or sign in to save future plans and completion history.';
   return;
  }
  $('acceptedStatus').textContent='Saving your selected plan…';

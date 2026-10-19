@@ -19,7 +19,7 @@ jobs:
       - name: Install pinned application dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run SpinFamily node regressions
-        run: node --test tests/*.test.cjs
+        run: npm test
       - name: Validate HTML scripts
         run: |
           node - <<'NODE'

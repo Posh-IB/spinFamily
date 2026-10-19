@@ -5,8 +5,6 @@ import {transaction} from '../../server/database.mjs';
 const {validateAcceptance,UUID,completionStatistics,serializeRecord}=historyPolicy;
 const response=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
 const fail=(reason,status)=>response({error:reason},status);
-const isActive=s=>s?.verified_payment===true&&!s.terminal&&
- ['active','trialing'].includes(s.status)&&s.current_period_end&&new Date(s.current_period_end)>new Date();
 const selectRecords=async(db,id)=>(await db.query(
  'SELECT client_plan_id,plan_data,created_at,completed_at FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL ORDER BY created_at DESC LIMIT 100',[id])).rows;
 export default async function handler(req){
@@ -34,10 +32,9 @@ export default async function handler(req){
   }
  }
  try{return await transaction(async db=>{
-  const hh=(await db.query('SELECT id,history_timezone FROM households WHERE owner_subject=$1 FOR UPDATE',[user.id])).rows[0];
-  if(!hh)return fail('household_not_found',403);
-  const s=(await db.query('SELECT status,verified_payment,terminal,current_period_end FROM subscriptions WHERE household_id=$1 FOR UPDATE',[hh.id])).rows[0];
-  if(!isActive(s))return fail('plus_required',403);
+  // Registration and Free progress never require a Stripe customer or subscription.
+  await db.query('INSERT INTO account_profiles(identity_subject) VALUES($1) ON CONFLICT DO NOTHING',[user.id]);
+  const hh=(await db.query('INSERT INTO households(owner_subject) VALUES($1) ON CONFLICT(owner_subject) DO UPDATE SET owner_subject=EXCLUDED.owner_subject RETURNING id,history_timezone',[user.id])).rows[0];
   if(req.method==='GET'){
    const rows=await selectRecords(db,hh.id);
    const timezone=hh.history_timezone||'UTC';
