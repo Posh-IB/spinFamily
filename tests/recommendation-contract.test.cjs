@@ -38,3 +38,5 @@ test('private transport fails closed when missing, insecure or unsuccessful and 
  assert.equal(captured.redirect,'error');assert.equal(captured.headers.authorization,'Bearer '+'x'.repeat(32));
 });
 
+
+test('invalid private planning choices remain a client error instead of a service outage',async()=>{const {requestPrivateSuggestions}=await import('../server/private-personalization.mjs');await assert.rejects(()=>requestPrivateSuggestions({},{endpoint:'https://private.example/v1/next-day',token:'x'.repeat(32),fetcher:async()=>new Response('{}',{status:422})}),/invalid_planning_options/);});

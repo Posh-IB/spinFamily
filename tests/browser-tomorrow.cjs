@@ -14,6 +14,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
     planningChoices:async()=>({activities:[{id:'story',name:'Read a story together'}]}),
     suggest:async options=>{window.__suggestOptions=options;return {date:'2026-10-17',timezone:'America/New_York',message:'Based on caregiver-confirmed completed plans.',plans:[{activities:[{name:'Read a story together',start:1080,end:1105}]}]};}
    };
+   window.dispatchEvent(new CustomEvent('spinfamily:entitlement',{detail:{plus:true}}));
    window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:{records:[],progress:{}}}));
   });
   await page.locator('#tomorrowGenerate').click();
