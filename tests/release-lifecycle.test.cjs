@@ -11,7 +11,7 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
  await db.query(`CREATE SCHEMA ${schema}`);
  const testUrl=new URL(url);testUrl.searchParams.set('options',`-c search_path=${schema}`);
  const scoped=new Pool({connectionString:testUrl.href,max:40});
- let user={id:'qa_a'},counter=0,feedbackSeen=null;
+ let user={id:'qa_a'},counter=0,feedbackSeen=null,inputSeen=null;
  const actualEngine=process.env.SPIN_QA_PRIVATE_MODULE?await import(process.env.SPIN_QA_PRIVATE_MODULE):null;
  const env={STRIPE_SECRET_KEY:'sk_test_synthetic',STRIPE_WEBHOOK_SECRET:'whsec_synthetic',SPINFAMILY_PLUS_MONTHLY_PRICE_ID:'price_monthly',SPINFAMILY_PLUS_ANNUAL_PRICE_ID:'price_annual',SPINFAMILY_CHECKOUT_ORIGIN:'https://qa.example'};
  globalThis.Netlify={env:{get:name=>env[name]}};
@@ -29,7 +29,7 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   }}};
  }
  mock.module('../server/private-personalization.mjs',{namedExports:{requestPrivateSuggestions:async input=>{
-   feedbackSeen=structuredClone(input.feedback);if(actualEngine)return actualEngine.suggestNextDay(input);const a=input.catalog[0];
+   inputSeen=structuredClone(input);feedbackSeen=structuredClone(input.feedback);if(actualEngine)return actualEngine.suggestNextDay(input);const a=input.catalog[0];
    return {schemaVersion:1,feedbackVersion:1,status:'OK',plans:[{entries:[{activityId:a.id,start:1080,end:1080+a.durationMin}]}]};
   }}});
  mock.module('stripe',{defaultExport:Provider});
@@ -64,6 +64,14 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const completed=event();assert.equal((await deliver(completed)).status,200);
   assert.equal((await (await deliver(completed)).json()).duplicate,true);
   assert.equal((await buy()).status,409,'no second checkout after paid subscription');
+  const metadata={durationMin:20,prepMin:5,cleanupMin:5,energy:'medium',costCents:0,locationMode:'home',availabilityConfirmed:true};
+  assert.equal((await activity(req('/api/household/activities',{name:'Indoor treasure hunt',category:'family',planning:metadata}))).status,201);
+  const choices=await (await suggestions(req('/api/household/suggestions'),ctx)).json();
+  const customId=choices.activities.find(a=>a.name==='Indoor treasure hunt').id;
+  if(actualEngine){
+   const scheduled=await suggestions(req('/api/household/suggestions',{schedule:{selection:'tomorrow',daypart:'evening'},routines:[customId]}),ctx);
+   assert.equal(scheduled.status,200);const shown=await scheduled.json();assert.ok(shown.plans.every(p=>p.activities.some(a=>a.id===customId&&a.end-a.start===30)));
+  }
   const planId='32c92000-080a-4a1d-8714-d194246bdde9';
   const planned={id:planId,timezone:'America/New_York',anchorCategory:'family',
    activities:[{name:'Read a story together',category:'family',durationMinutes:45},
@@ -100,7 +108,7 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
 
   const blocked=await activity(req('/api/household/activities',{name:'f u c k this',category:'family'}));assert.equal(blocked.status,422);
   const creates=await Promise.all(Array.from({length:28},(_,i)=>activity(req('/api/household/activities',{name:'Read together '+i,category:'family'}))));
-  assert.equal(creates.filter(r=>r.status===201).length,20);assert.equal(creates.filter(r=>r.status===409).length,8);
+  assert.equal(creates.filter(r=>r.status===201).length,19);assert.equal(creates.filter(r=>r.status===409).length,9);
   assert.equal((await (await activity(req('/api/household/activities'))).json()).activities.length,20);
   await scoped.query("INSERT INTO account_profiles(identity_subject) VALUES('qa_b')");
   const bHouse=(await scoped.query("INSERT INTO households(owner_subject) VALUES('qa_b') RETURNING id")).rows[0].id;
@@ -113,6 +121,7 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   await scoped.query("UPDATE households SET history_timezone='America/New_York' WHERE id=$1",[bHouse]);
   assert.equal((await suggestions(req('/api/household/suggestions',{}),ctx)).status,200);
   assert.equal(feedbackSeen.records.length,0,'B cannot use A completion feedback');
+  assert.equal(inputSeen.catalog.some(a=>a.id===customId),false,'B cannot use A custom activities');
   assert.equal((await history(req('/api/household/plans',{action:'complete',id:planId}))).status,404,'B cannot complete A plan');
   assert.equal((await history(req('/api/household/plans',{action:'delete',id:planId}))).status,404,'B cannot delete A plan');
   user={id:'qa_a'};

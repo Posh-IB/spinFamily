@@ -187,6 +187,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 .activity-photo img[hidden]{display:none}
   [hidden]{display:none!important}
   #spinPage>#tomorrowPanel{grid-column:1/-1;grid-row:4}#spinPage>#progressPanel{grid-column:1/-1;grid-row:5}
+  #activityForm fieldset{grid-column:1/-1;min-width:0;border:1px solid #b7d6d3;border-radius:12px;padding:12px}#activityForm fieldset label{display:block;margin:8px 0}#activityForm input[type=number]{max-width:100px}#tomorrowPanel input,#tomorrowPanel select,#tomorrowPanel button{min-height:44px;max-width:100%}#tomorrowPanel input[type=checkbox]{min-height:auto;min-width:24px;height:24px;vertical-align:middle}
   #tomorrowPanel label{display:inline-block;margin:6px 10px 6px 0;font-size:13px}#tomorrowPanel input[type=time],#tomorrowPanel select{padding:7px;border:1px solid #b7d6d3;border-radius:9px;background:white}#tomorrowChoices>div{padding:9px 0;border-bottom:1px solid #dce9eb}#tomorrowChoices span{display:block;font-weight:700}#tomorrowGenerate{margin:12px 0;padding:10px 16px;border:0;border-radius:12px;background:#147d86;color:white;font-weight:700}
   .history-record{padding:12px 0;border-bottom:1px solid #dce9eb}.history-record p{margin:6px 0}.history-record button{margin-right:8px;margin-top:6px}
 
@@ -264,9 +265,13 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <p class="small-note">Spin to choose your starting category. SpinFamily builds a two-hour plan from the current time, with bedtime last when included. Activity times are estimates; you choose whether to use the plan.</p>
     </section>
     <div id="acceptedStatus" class="status" role="status"></div>
-    <section class="card" id="tomorrowPanel" hidden aria-label="Tomorrow household suggestions">
-      <h3>A little variety for tomorrow</h3>
-      <p class="helper">Private preview · suggestions use caregiver-confirmed completed plans. At-home ideas use estimated durations, within your chosen window. Your routines and must-include choices stay protected. Variety never affects earned streak days.</p>
+    <section class="card" id="tomorrowPanel" hidden aria-label="Household planning suggestions">
+      <h3>Plan family time</h3>
+      <p class="helper">Private preview · suggestions use caregiver-confirmed completed plans. At-home curated and eligible custom ideas use estimated durations, within your chosen window. Your routines and must-include choices stay protected. Variety never affects earned streak days.</p>
+      <label>Day <select id="scheduleSelection"><option value="today">Today</option><option value="tomorrow" selected>Tomorrow</option><option value="future">Choose date</option></select></label>
+      <label id="scheduleDateLabel" hidden>Date <input id="scheduleDate" type="date"></label>
+      <label>Time <select id="scheduleDaypart"><option value="default">Now + 2 hours (today)</option><option value="morning">Morning · 09:00–12:00</option><option value="afternoon">Afternoon · 12:00–17:00</option><option value="evening">Evening · 17:00–22:00</option><option value="custom" selected>Custom window</option></select></label>
+      <p class="helper">Today starts no earlier than the current household time. Choose a future date within one year. Overnight and daylight-saving transition windows are unavailable. This preview does not check venues or weather.</p>
       <label>Start <input id="tomorrowStart" type="time" value="18:00"></label>
       <label>End <input id="tomorrowEnd" type="time" value="20:00"></label>
       <label>Energy <select id="tomorrowEnergy"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></label>
@@ -306,6 +311,16 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <form class="add-form" id="activityForm" hidden>
         <input id="activityName" maxlength="60" placeholder="Add a family-friendly activity" required aria-label="Activity name">
         <select id="activityCategory" aria-label="Activity category"><option value="chore">Chores</option><option value="outdoor">Outdoor</option><option value="family">Family</option><option value="selfcare">Self Care</option></select>
+        <fieldset><legend>Private suggestion details (optional)</legend>
+          <label><input id="customPlanningEnabled" type="checkbox"> Include this at-home activity in private suggestions</label>
+          <label>Activity minutes <input id="customDuration" type="number" min="1" max="180" value="20"></label>
+          <label>Prep minutes <input id="customPrep" type="number" min="0" max="60" value="0"></label>
+          <label>Cleanup minutes <input id="customCleanup" type="number" min="0" max="60" value="0"></label>
+          <label>Energy <select id="customEnergy"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></label>
+          <label>Estimated cost (cents) <input id="customCost" type="number" min="0" max="100000" value="0"></label>
+          <label><input id="customAvailable" type="checkbox"> I confirm this activity is available at home</label>
+          <p class="helper">Outdoor activities remain outside private suggestions until weather and venue checks are supported. Existing activities without these details stay in your activity library.</p>
+        </fieldset>
         <button type="submit">Save custom activity</button>
       </form>
       
@@ -494,7 +509,7 @@ async function addActivity(e){
  const button=$('activityForm').querySelector('button[type="submit"]');
  button.disabled=true;
  try{
-   const activity=await window.spinFamilyPlus.add(name,category);
+   const activity=await window.spinFamilyPlus.add(name,category,$('customPlanningEnabled').checked?{durationMin:Number($('customDuration').value),prepMin:Number($('customPrep').value),cleanupMin:Number($('customCleanup').value),energy:$('customEnergy').value,costCents:Number($('customCost').value),locationMode:'home',availabilityConfirmed:$('customAvailable').checked}:undefined);
    custom.push({name:activity.name,category:activity.category});
    $('activityName').value='';renderActivities();
  }catch{alert('Activity could not be saved. Verify your Plus subscription and try again.');}

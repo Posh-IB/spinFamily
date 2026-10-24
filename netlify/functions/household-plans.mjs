@@ -10,12 +10,12 @@ const fail=(reason,status)=>response({error:reason},status);
 const selectRecords=async(db,id,cursor=null)=>{
  const params=[id];let after='';
  if(cursor){params.push(cursor.createdAt,cursor.id);after=' AND (created_at, id) < ($2::timestamptz, $3::uuid)';}
- const rows=(await db.query('SELECT id,client_plan_id,plan_data,created_at,completed_at FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL'+after+' ORDER BY created_at DESC,id DESC LIMIT '+(HISTORY_PAGE_SIZE+1),params)).rows;
+ const rows=(await db.query(`SELECT id,client_plan_id,plan_data,created_at,completed_at,to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL`+after+' ORDER BY created_at DESC,id DESC LIMIT '+(HISTORY_PAGE_SIZE+1),params)).rows;
  const hasMore=rows.length>HISTORY_PAGE_SIZE,page=rows.slice(0,HISTORY_PAGE_SIZE);
  return {rows:page,nextCursor:hasMore?encodeCursor(page.at(-1)):null};
 };
 const aggregateProgress=async(db,id,timezone)=>{
- const rows=(await db.query("SELECT (completed_at AT TIME ZONE $2)::date AS day FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL AND completed_at IS NOT NULL AND completion_source='explicit_caregiver' GROUP BY day ORDER BY day ASC",[id,timezone])).rows;
+ const rows=(await db.query("SELECT (completed_at AT TIME ZONE $2)::date::text AS day FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL AND completed_at IS NOT NULL AND completion_source='explicit_caregiver' GROUP BY day ORDER BY day ASC",[id,timezone])).rows;
  const totals=(await db.query('SELECT count(*)::int AS accepted,count(completed_at)::int AS completed FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL',[id])).rows[0];
  const days=rows.map(r=>typeof r.day==='string'?r.day:new Date(r.day).toISOString().slice(0,10));
  const today=historyPolicy.localDay(new Date(),timezone),dayNum=d=>Date.parse(d+'T00:00:00Z')/86400000;
