@@ -286,6 +286,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <p id="progressSummary" aria-live="polite">Your saved plans will appear here.</p>
       <div id="historyFeedback" role="status" aria-live="polite"></div>
       <div id="historyList"></div>
+      <button type="button" id="historyLoadMore" hidden>Load older plans</button>
       <p class="helper">Only caregiver-confirmed completions count. Your saved history belongs to your signed-in household.</p>
     </section>
   </main>
@@ -545,12 +546,16 @@ $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('clic
   $('acceptedStatus').textContent='The plan could not be saved. No completion has been recorded. Please retry.';
  }
 });
+let historyCursor=null,historyPageEpoch=0;
 window.addEventListener('spinfamily:history',event=>{
  const panel=$('progressPanel'),feed=$('historyFeedback'),list=$('historyList'),summary=$('progressSummary');
  const data=event.detail;
+ historyPageEpoch++;historyCursor=null;$('historyLoadMore').hidden=true;
  if(!data){panel.hidden=true;list.replaceChildren();return;}
  panel.hidden=false;
  if(data.error){summary.textContent=data.error;list.replaceChildren();return;}
+ historyCursor=typeof data.nextCursor==='string'?data.nextCursor:null;
+ $('historyLoadMore').hidden=!historyCursor;
  const rows=Array.isArray(data.records)?data.records:[];
  const p=data.progress||{};
  summary.textContent='Completed plans: '+(p.completedPlans||0)+' · Completed days: '+(p.completedDays||0)+
@@ -578,6 +583,31 @@ window.addEventListener('spinfamily:history',event=>{
   remove.textContent='Delete record';remove.dataset.historyAction='delete';remove.dataset.planId=row.id;
   item.append(remove);list.append(item);
  });
+});
+$('historyLoadMore').addEventListener('click',async()=>{
+ const button=$('historyLoadMore'),cursor=historyCursor,epoch=historyPageEpoch;
+ if(!cursor||button.disabled)return;
+ button.disabled=true;$('historyFeedback').textContent='Loading older plans…';
+ try{
+  const data=await window.spinFamilyHistory.older(cursor);
+  if(epoch!==historyPageEpoch)return;
+  const rows=Array.isArray(data.records)?data.records:[];
+  const list=$('historyList');
+  for(const row of rows){
+   const item=document.createElement('article');item.className='history-record';
+   const title=document.createElement('strong');title.textContent=(row.plan?.activities||[]).map(x=>x.name).join(' • ')||'Family plan';
+   const meta=document.createElement('p');meta.className='helper';
+   meta.textContent=row.status==='completed'?'Completed: '+new Date(row.completedAt).toLocaleString():'Selected: '+new Date(row.acceptedAt).toLocaleString()+' · Not marked complete';
+   item.append(title,meta);
+   if(row.status!=='completed'){
+    const complete=document.createElement('button');complete.type='button';complete.textContent='Mark plan complete';complete.dataset.historyAction='complete';complete.dataset.planId=row.id;item.append(complete);
+   }
+   const remove=document.createElement('button');remove.type='button';remove.textContent='Delete record';remove.dataset.historyAction='delete';remove.dataset.planId=row.id;item.append(remove);list.append(item);
+  }
+  historyCursor=typeof data.nextCursor==='string'?data.nextCursor:null;
+  button.hidden=!historyCursor;$('historyFeedback').textContent=rows.length?'Older plans loaded.':'No more saved plans.';
+ }catch{if(epoch===historyPageEpoch)$('historyFeedback').textContent='Could not load older plans. Retry.';}
+ finally{button.disabled=false;}
 });
 $('historyList').addEventListener('click',async event=>{
  const button=event.target.closest('button[data-history-action]');
