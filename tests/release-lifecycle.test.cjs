@@ -66,12 +66,6 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   assert.equal((await buy()).status,409,'no second checkout after paid subscription');
   const metadata={durationMin:20,prepMin:5,cleanupMin:5,energy:'medium',costCents:0,locationMode:'home',availabilityConfirmed:true};
   assert.equal((await activity(req('/api/household/activities',{name:'Indoor treasure hunt',category:'family',planning:metadata}))).status,201);
-  const choices=await (await suggestions(req('/api/household/suggestions'),ctx)).json();
-  const customId=choices.activities.find(a=>a.name==='Indoor treasure hunt').id;
-  if(actualEngine){
-   const scheduled=await suggestions(req('/api/household/suggestions',{schedule:{selection:'tomorrow',daypart:'evening'},routines:[customId]}),ctx);
-   assert.equal(scheduled.status,200);const shown=await scheduled.json();assert.ok(shown.plans.every(p=>p.activities.some(a=>a.id===customId&&a.end-a.start===30)));
-  }
   const planId='32c92000-080a-4a1d-8714-d194246bdde9';
   const planned={id:planId,timezone:'America/New_York',anchorCategory:'family',
    activities:[{name:'Read a story together',category:'family',durationMinutes:45},
@@ -80,6 +74,14 @@ test('real PostgreSQL handlers: checkout concurrency, verified payment, tenant i
   const save=()=>history(req('/api/household/plans',{action:'accept',plan:planned}));
   assert.equal((await save()).status,200,'accepted plan saved');
   assert.equal((await save()).status,200,'repeating accept is idempotent');
+  const choicesResponse=await suggestions(req('/api/household/suggestions'),ctx);
+  assert.equal(choicesResponse.status,200,'planning choices follow the saved household timezone');
+  const choices=await choicesResponse.json();
+  const customId=choices.activities.find(a=>a.name==='Indoor treasure hunt').id;
+  if(actualEngine){
+   const scheduled=await suggestions(req('/api/household/suggestions',{schedule:{selection:'tomorrow',daypart:'evening'},routines:[customId]}),ctx);
+   assert.equal(scheduled.status,200);const shown=await scheduled.json();assert.ok(shown.plans.every(p=>p.activities.some(a=>a.id===customId&&a.end-a.start===30)));
+  }
   const before=(await (await history(req('/api/household/plans'))).json());
   assert.equal(before.progress.acceptedPlans,1);
   assert.equal(before.progress.completedPlans,0,'acceptance must never imply completion');
