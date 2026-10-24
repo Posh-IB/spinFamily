@@ -22,3 +22,5 @@ test('cursor refuses invalid dates and IDs on encoding',()=>{
  assert.throws(()=>encodeCursor({id:'missing',created_at:new Date()}),/invalid_history_cursor/);
  assert.throws(()=>encodeCursor({id,created_at:'not a date'}),/invalid_history_cursor/);
 });
+
+test('cursor preserves PostgreSQL microseconds without rounding',()=>{const c=encodeCursor({cursor_created_at:'2026-10-23T18:30:00.123456Z',id});assert.equal(decodeCursor(c).createdAt,'2026-10-23T18:30:00.123456Z');});

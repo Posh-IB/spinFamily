@@ -1,6 +1,7 @@
 import {getUser} from '@netlify/identity';
 import security from '../../lib/request-security.cjs';
 import contract from '../../lib/recommendation-contract.cjs';
+import customPlanning from '../../lib/custom-planning.cjs';
 import catalogData from '../../server/recommendation-catalog.json' with {type:'json'};
 import {transaction} from '../../server/database.mjs';
 import {requestPrivateSuggestions} from '../../server/private-personalization.mjs';
@@ -26,14 +27,16 @@ export default async function handler(req,context){
    const s=(await db.query('SELECT status,verified_payment,terminal,current_period_end FROM subscriptions WHERE household_id=$1 FOR UPDATE',[hh.id])).rows[0];
    if(s?.verified_payment!==true||s.terminal||!['active','trialing'].includes(s.status)||!s.current_period_end||new Date(s.current_period_end)<=new Date())return fail('plus_required',403);
    if(!hh.history_timezone)return fail('save_plan_timezone_first',409);
-   if(req.method==='GET')return response({activities:catalogData.map(({id,title})=>({id,name:title})),timezone:hh.history_timezone});
+   const custom=(await db.query('SELECT name,category,planning_metadata FROM custom_activities WHERE household_id=$1 ORDER BY created_at,id LIMIT 20',[hh.id])).rows;
+   const catalog=customPlanning.householdCatalog(catalogData,custom);
+   if(req.method==='GET')return response({activities:catalog.map(({id,title})=>({id,name:title})),timezone:hh.history_timezone});
    // Caller cannot supply household, history, catalog, date, feedback or completion credit.
    const rows=(await db.query("SELECT client_plan_id,plan_data,completed_at,completion_source FROM saved_plans WHERE household_id=$1 AND client_plan_id IS NOT NULL AND completed_at IS NOT NULL AND completion_source='explicit_caregiver' ORDER BY completed_at DESC LIMIT 100",[hh.id])).rows;
-   let input;try{input=recommendationInput(rows,hh.history_timezone,options,catalogData);}catch{return fail('invalid_options',422);}
+   let input;try{input=recommendationInput(rows,hh.history_timezone,options,catalog);}catch{return fail('invalid_options',422);}
    try{
     const result=await requestPrivateSuggestions(input,{endpoint:globalThis.Netlify?.env.get('SPINFAMILY_PRIVATE_ENGINE_URL'),token:globalThis.Netlify?.env.get('SPINFAMILY_PRIVATE_ENGINE_TOKEN')});
     return response(displayResult(result,input));
-   }catch{return fail('personalization_unavailable',503);}
+   }catch(error){return error.message==='invalid_planning_options'?fail('invalid_planning_options',422):fail('personalization_unavailable',503);}
   });
  }catch{return fail('personalization_unavailable',503);}
 }

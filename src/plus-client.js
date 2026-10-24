@@ -39,6 +39,7 @@ function resetActivities() {
   window.spinFamilyHydrateCustomActivities?.([]);
 }
 function updateControls() {
+  window.dispatchEvent(new CustomEvent('spinfamily:entitlement',{detail:{plus:isPlus&&sessionReady()}}));
   const authenticated = Boolean(activeUser)||sessionUncertain;
   authForm.hidden = authenticated;
   signOut.hidden = !authenticated;
@@ -238,12 +239,13 @@ window.spinFamilyHistory={
   }
 };
 window.spinFamilyPlus={
-  async add(name,category){
+  async add(name,category,planning){
     if(!sessionReady()||!isPlus)throw new Error('plus_required');
     const epoch=generation;
     const data=await api('/api/household/activities',{method:'POST',
-      headers:{'content-type':'application/json'},body:JSON.stringify({name,category})});
+      headers:{'content-type':'application/json'},body:JSON.stringify({name,category,...(planning?{planning}:{})})});
     if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
+    window.dispatchEvent(new CustomEvent('spinfamily:catalog-changed'));
     return data.activity;
   }
 };
