@@ -189,6 +189,13 @@ async function loadHistory(){
 }
 window.spinFamilyHistory={
   eligible:sessionReady,
+  async older(cursor){
+    if(!sessionReady()||typeof cursor!=='string'||cursor.length>160)throw new Error('invalid_history_cursor');
+    const epoch=generation,subject=activeUser.id;
+    const data=await api('/api/household/plans?cursor='+encodeURIComponent(cursor));
+    if(epoch!==generation||!activeUser||activeUser.id!==subject||sessionUncertain)throw new Error('session_changed');
+    return data;
+  },
   async planningChoices(){
     if(!sessionReady()||!isPlus)throw new Error('plus_required');
     const epoch=generation,data=await api('/api/household/suggestions');
