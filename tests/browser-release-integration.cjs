@@ -7,7 +7,7 @@ const {chromium}=require('playwright');
  const server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+new URL(req.url,'http://localhost').pathname);if(!file.startsWith(root+path.sep)&&file!==root){res.writeHead(403);return res.end();}const target=file===root||req.url==='/'?path.join(root,'index.html'):file;if(!fs.existsSync(target)||fs.statSync(target).isDirectory()){res.writeHead(503);return res.end('{}');}res.setHeader('content-type',target.endsWith('.js')?'text/javascript':target.endsWith('.html')?'text/html':target.endsWith('.webp')?'image/webp':'application/octet-stream');fs.createReadStream(target).pipe(res);});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));let browser;
  try{
-  browser=await chromium.launch({headless:true,timeout:20000});
+  browser=await chromium.launch({headless:true,timeout:20000,...(process.env.QA_BROWSER_CHANNEL?{channel:process.env.QA_BROWSER_CHANNEL}:{})});
   for(const width of [390,1440]){
    const page=await browser.newPage({viewport:{width,height:900},reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
    await page.goto('http://127.0.0.1:'+server.address().port,{waitUntil:'domcontentloaded',timeout:20000});
@@ -21,5 +21,5 @@ const {chromium}=require('playwright');
   }
   const page=await browser.newPage({viewport:{width:390,height:900}});await page.goto('https://deploy-preview-14--spinfamily-app.netlify.app/',{waitUntil:'domcontentloaded',timeout:20000});assert.equal(await page.locator('#spinBtn').count(),1);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:'qa-screenshots/hosted-guest-390.png',fullPage:true});out.hosted.push({status:'passed',scope:'Older deployed commit; anonymous page only; no account or household writes'});await page.close();
  }catch(e){out.errors.push(String(e.stack||e));process.exitCode=1;}
- finally{if(browser)await browser.close();await new Promise(r=>server.close(r));fs.writeFileSync('qa-screenshots/release-browser.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out));}
+ finally{fs.writeFileSync('qa-screenshots/release-browser.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out));server.closeAllConnections();await new Promise(r=>server.close(r));if(browser)await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

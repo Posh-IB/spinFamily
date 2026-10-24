@@ -11,10 +11,18 @@ Candidate based on public PR #18 (d30eb843) and private PR #10 (70b2c601). No pr
 
 ## Verification so far
 - Private full suite: 164 passed, 0 failed; separate new scheduling integration: 2 passed, 0 failed.
-- Public unit suite: 52 passed, 0 failed, 3 PostgreSQL tests skipped without a database URL. Public build passed. Later focused checks and browser results are recorded separately.
+- Public unit suite: 52 passed, 0 failed, 3 PostgreSQL tests skipped without a database URL. Public build passed. Focused cursor/custom/transport checks: 13 passed, 0 failed. Handler syntax validation passed.
 - GitHub private run 40136219673 failed before any step: account payments failed or spending limit needs increasing. No billing limit or payment settings changed.
 - Local PostgreSQL execution is blocked: Docker daemon was stopped; after starting Desktop, its local engine API returns Internal Server Error. No PostgreSQL pass is claimed from skipped tests.
 - Existing QA deploy 6ad2eea19ff4ca983928b897 serves older public commit cd4c292, context deploy-preview; database_branch_id and database_migrations are null. Private engine URL/token are absent from site environment metadata. No hosted account/household writes or private transport success is claimed.
 
 ## Release gates still required
 Run the PostgreSQL and actual private-engine lifecycle gates; restore private CI account billing; verify an isolated preview database and applied migrations, configure the preview-only authenticated private service, and complete real Identity/Plus/reload/logout browser QA at 390/1440. Never merge QA-only PR #14. Production merge and deployment require explicit approval.
+
+## Publication gate
+
+Local implementation commits are saved. Automatic approval review rejected the public GitHub push because the exact payload and public publication were not explicitly authorized. No push occurred. Approval to publish the candidate changes is required before public CI can run them; production merge/deployment remain separate approvals.
+
+## Browser observation
+
+Installed Chrome exercised the local scheduling fixture at 390/1440 and the older hosted anonymous preview at 390; screenshots were saved and the mobile candidate was inspected. The runner did not finish cleanup or persist a final success result. These observations do not establish real Identity/Plus or database integration. The QA runner now saves results before cleanup and closes local HTTP connections explicitly.
