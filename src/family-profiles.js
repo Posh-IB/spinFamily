@@ -90,4 +90,4 @@ byId('familyAddChild').addEventListener('click',()=>{
 byId('familyAddAdult').addEventListener('click',()=>change({action:'save',slot:'adult1',name:'Additional adult',tone:0}));
 byId('activityParticipantSelect').addEventListener('change',e=>choose(e.target.value));
 window.spinFamilyProfiles={activate,choose,getSelectedName:()=>state.find(m=>m.slot===selected)?.name||'Mom'};
-render();
+state=defaults();render();
