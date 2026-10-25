@@ -268,7 +268,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     <div id="acceptedStatus" class="status" role="status"></div>
     <section class="card" id="tomorrowPanel" hidden aria-label="Household planning suggestions">
       <h3>Plan family time</h3>
-      <p class="helper">Private preview · suggestions use caregiver-confirmed completed plans. At-home curated and eligible custom ideas use estimated durations, within your chosen window. Your routines and must-include choices stay protected. Variety never affects earned streak days.</p>
+      <p class="helper">Private preview · suggestions use family-confirmed completed plans. At-home curated and eligible custom ideas use estimated durations, within your chosen window. Your routines and must-include choices stay protected. Variety never affects earned streak days.</p>
       <label>Day <select id="scheduleSelection"><option value="today">Today</option><option value="tomorrow" selected>Tomorrow</option><option value="future">Choose date</option></select></label>
       <label id="scheduleDateLabel" hidden>Date <input id="scheduleDate" type="date"></label>
       <label>Time <select id="scheduleDaypart"><option value="default">Now + 2 hours (today)</option><option value="morning">Morning · 09:00–12:00</option><option value="afternoon">Afternoon · 12:00–17:00</option><option value="evening">Evening · 17:00–22:00</option><option value="custom" selected>Custom window</option></select></label>
@@ -276,7 +276,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <label>Start <input id="tomorrowStart" type="time" value="18:00"></label>
       <label>End <input id="tomorrowEnd" type="time" value="20:00"></label>
       <label>Energy <select id="tomorrowEnergy"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></label>
-      <details><summary>Caregiver choices and a fixed commitment</summary>
+      <details><summary>family choices and a fixed commitment</summary>
         <p class="helper">Exclusions are hard constraints. Routines and must-include activities repeat when you choose; conflicting choices return no plan. Suggestions contain up to three activities and may leave free time.</p>
         <label>Commitment starts <input id="tomorrowFixedStart" type="time"></label>
         <label>Commitment ends <input id="tomorrowFixedEnd" type="time"></label>
@@ -293,7 +293,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
       <div id="historyFeedback" role="status" aria-live="polite"></div>
       <div id="historyList"></div>
       <button type="button" id="historyLoadMore" hidden>Load older plans</button>
-      <p class="helper">Only caregiver-confirmed completions count. Your saved history belongs to your signed-in household.</p>
+      <p class="helper">Only family-confirmed completions count. Your saved history belongs to your signed-in household.</p>
     </section>
   </main>
 
@@ -330,19 +330,20 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
 
   <main id="familyPage" class="page">
     <section class="page-hero family-hero"><div class="page-heading"><p class="hero-kicker">TOGETHER IS BETTER</p><h2>Our Family</h2><p>Every family looks different. Every moment matters.</p></div></section>
-    <section class="card family-space"><h3>Who's helping choose tonight?</h3><p>Choose a family role for this session. The role resets on reload. Plus household plan history is separate and never profiles individual children.</p>
+    <section class="card family-space"><h3>Who's helping choose tonight?</h3><p>Choose who's helping tonight. Signed-in accounts can save names and emoji complexion preferences. Two additional children are free; an additional adult requires Plus.</p>
       <div class="family-options"><button type="button" data-family-member="Mom">👩 <span>Mom</span></button><button type="button" data-family-member="Dad">👨 <span>Dad</span></button><button type="button" data-family-member="Emma">👧 <span>Emma</span></button><button type="button" data-family-member="Lucas">👦 <span>Lucas</span></button></div>
       <p class="family-selection" id="familySelection" role="status">Currently choosing: Mom</p>
+      <section id="familyProfiles" aria-label="Edit family profiles" style="margin-top:16px"><h3>Family profiles</h3><p id="familyProfileHelp" class="helper"></p><div id="familyProfileCards"></div><div><button id="familyAddChild" type="button" hidden>Add child (Free)</button> <button id="familyAddAdult" type="button" hidden>Add adult (Plus)</button></div><p id="familyProfileStatus" role="status"></p></section>
     </section>
   </main>
 
   <main id="guidePage" class="page guide">
     <section class="page-hero guide-hero"><div class="page-heading"><p class="hero-kicker">THE SPINFAMILY WAY</p><h2>Ideas for Every Family</h2><p>Simple tips, fresh ideas and support for making tonight special.</p></div></section>
-    <section class="card"><h2>Quick Start</h2><ol><li>Choose the family member helping with the decision.</li><li>Spin the wheel.</li><li>Review the timed activities in your suggested two-hour plan.</li><li>Spin again if the plan does not fit tonight.</li><li>Add a custom activity from the Activities tab if needed.</li></ol><h3>What the prototype does</h3><p>SpinFamily uses the wheel's landed category and curated activity estimates to create a two-hour plan starting at the current device time. Chores lead into other activities, with bedtime last when included. The app does not check your real calendar or learn private household preferences.</p><h3>What comes next</h3><p>Future work may add validated fixed-event constraints, caregiver-controlled routines, history, and private household preferences without changing the familiar wheel.</p></section>
+    <section class="card"><h2>Quick Start</h2><ol><li>Choose the family member helping with the decision.</li><li>Spin the wheel.</li><li>Review the timed activities in your suggested two-hour plan.</li><li>Spin again if the plan does not fit tonight.</li><li>Add a custom activity from the Activities tab if needed.</li></ol><h3>What the prototype does</h3><p>SpinFamily uses the wheel's landed category and curated activity estimates to create a two-hour plan starting at the current device time. Chores lead into other activities, with bedtime last when included. The app does not check your real calendar or learn private household preferences.</p><h3>What comes next</h3><p>Future work may add validated fixed-event constraints, family-controlled routines, history, and private household preferences without changing the familiar wheel.</p></section>
   </main>
 
   <main id="aboutPage" class="page about">
-    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free accounts · Saved family progress</h3><p>Anonymous spins and two-hour suggestions are free. Signed-in Free and Plus households can save selected plans, mark them complete explicitly, revisit their history, and remove records. A selection never counts as a completion; progress is derived only from caregiver-confirmed completions.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Full caregiver-managed member profiles</li><li>Weather-aware suggestions</li><li>Validated activity-by-activity progress and variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
+    <section class="card"><h2>About SpinFamily</h2><p>SpinFamily is designed to reduce family evening decision fatigue through a quick, participatory planning experience.</p><h3>Current prototype capabilities</h3><ul><li>Four curated activity categories</li><li>Category-led two-hour evening schedules with explicit estimated activity times</li><li>Session-only custom activities</li><li>Basic client-side family-friendly text screening for custom activity names</li></ul><h3>Free accounts · Saved family progress</h3><p>Anonymous spins and two-hour suggestions are free. Signed-in Free and Plus households can save selected plans, mark them complete explicitly, revisit their history, and remove records. A selection never counts as a completion; progress is derived only from family-confirmed completions.</p><h3>Not implemented in this version</h3><ul><li>Machine-learning recommendations</li><li>Personalized member scoring</li><li>Full family-managed member profiles</li><li>Weather-aware suggestions</li><li>Validated activity-by-activity progress and variety analytics</li></ul><p style="margin-top:14px">Prototype status: public beta/proof of execution. Public deployment does not represent production security, privacy, or ML approval.</p></section>
   </main>
 
 
@@ -432,7 +433,7 @@ function showResults(anchor){
  currentAnchor=anchor;
  currentPlanRecordId=plan?crypto.randomUUID():null;
  if(!plan){$('acceptedStatus').textContent='No two-hour combination fits '+labels[anchor]+'. Try another spin.';$('acceptedStatus').classList.add('show');return;}
- $('resultSubtitle').textContent=currentMember+' choosing · '+formatClock(plan[0].start)+' – '+formatClock(plan[plan.length-1].end)+' · 2-hour plan';
+ $('resultSubtitle').textContent=(window.spinFamilyProfiles?.getSelectedName?.()||currentMember)+' choosing · '+formatClock(plan[0].start)+' – '+formatClock(plan[plan.length-1].end)+' · 2-hour plan';
  $('whyText').textContent='Why this plan: The wheel landed on '+labels[anchor]+'. This schedule includes that category, totals exactly 120 minutes using curated activity estimates, and keeps bedtime last when included. You decide whether to use it. No weather, live availability, or personalized AI is used.';
  $('planCards').innerHTML=plan.map(x=>'<article class="plan-card"><div class="plan-icon" aria-hidden="true">'+x.icon+'</div><div><div class="plan-name">'+escapeHtml(x.name)+'</div><div class="plan-meta">'+formatClock(x.start)+'–'+formatClock(x.end)+' · '+labels[x.category]+' · '+x.duration+' min</div></div></article>').join('');
  $('results').classList.add('open');$('acceptBtn').focus();
@@ -539,11 +540,7 @@ function selectParticipant(member){
  $('activityParticipantName').textContent='Choosing with '+member;
  $('activityParticipantSelect').value=member;
 }
-document.querySelectorAll('.member').forEach(button=>button.addEventListener('click',()=>selectParticipant(button.dataset.member)));
-document.querySelectorAll('[data-family-member]').forEach(button=>button.addEventListener('click',()=>selectParticipant(button.dataset.familyMember)));
-$('activityParticipantSelect').addEventListener('change',event=>selectParticipant(event.target.value));
-document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>switchPage(button.dataset.page,button)));
-selectParticipant(currentMember);
+// Dynamic family profile controls are attached by the family profile module.
 $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',async()=>{
  $('results').classList.remove('open');
  const plan=currentPlan.map(x=>({name:x.name,category:x.category,durationMinutes:x.duration}));
