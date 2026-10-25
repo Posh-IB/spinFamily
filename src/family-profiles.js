@@ -5,6 +5,8 @@ let state=[],signedIn=false,epoch=0;
 const bases={parent1:'👩',parent2:'👨',child1:'👧',child2:'👦',child3:'🧒',child4:'🧒',adult1:'🧑'};
 const modifiers=['','🏻','🏼','🏽','🏾','🏿'];
 const avatar=m=>(bases[m.slot]||'🧑')+modifiers[m.tone||0];
+const legacy={parent1:'Mom',parent2:'Dad',child1:'Emma',child2:'Lucas'};
+const publicId=slot=>legacy[slot]||slot;
 const defaults=()=>['parent1','parent2','child1','child2'].map(slot=>({slot,name:names[slot],kind:slot.startsWith('child')?'child':'parent',tone:0}));
 function render(){
  const cards=byId('familyProfileCards');
@@ -36,7 +38,7 @@ function render(){
   const holder=document.querySelector(selector);if(!holder)continue;
   holder.replaceChildren();
   for(const m of state){
-   const button=document.createElement('button');button.type='button';button.setAttribute(attr,m.slot);
+   const button=document.createElement('button');button.type='button';button.setAttribute(attr,publicId(m.slot));
    if(key==='members')button.className='member';
    const emoji=document.createElement('span');emoji.className=key==='members'?'member-icon':'family-emoji';emoji.textContent=avatar(m);
    const title=document.createElement('span');title.className='member-name';title.textContent=m.name;
@@ -45,20 +47,21 @@ function render(){
   }
  }
  const select=byId('activityParticipantSelect');select.replaceChildren();
- for(const m of state){const option=document.createElement('option');option.value=m.slot;option.textContent=m.name;select.append(option);}
+ for(const m of state){const option=document.createElement('option');option.value=publicId(m.slot);option.textContent=m.name;select.append(option);}
  choose(state.some(m=>m.slot===selected)?selected:'parent1');
 }
 let selected='parent1';
 function choose(slot){
- const m=state.find(x=>x.slot===slot);if(!m)return;
+ const m=state.find(x=>x.slot===slot||publicId(x.slot)===slot);if(!m)return;
+ slot=m.slot;
  selected=m.slot;
- document.querySelectorAll('[data-member]').forEach(el=>{const yes=el.dataset.member===slot;el.classList.toggle('active',yes);el.setAttribute('aria-pressed',String(yes));});
- document.querySelectorAll('[data-family-member]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.familyMember===slot)));
+ document.querySelectorAll('[data-member]').forEach(el=>{const yes=el.dataset.member===publicId(slot);el.classList.toggle('active',yes);el.setAttribute('aria-pressed',String(yes));});
+ document.querySelectorAll('[data-family-member]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.familyMember===publicId(slot))));
  byId('memberContext').textContent=m.name+' is selected for this session. Suggestions are not personalized by member.';
  byId('familySelection').textContent='Currently choosing: '+m.name;
  byId('activityParticipantAvatar').textContent=avatar(m);
  byId('activityParticipantName').textContent='Choosing with '+m.name;
- byId('activityParticipantSelect').value=slot;
+ byId('activityParticipantSelect').value=publicId(slot);
  window.spinFamilyCurrentMemberName=m.name;
 }
 async function change(body){
