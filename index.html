@@ -234,6 +234,11 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
   <button id="plusMonthly" type="button" hidden>Plus monthly — $4.99</button>
   <button id="plusAnnual" type="button" hidden>Plus yearly — $49</button>
   <button id="plusManage" type="button" hidden>Manage subscription</button>
+  <div id="analyticsPreference" hidden style="margin-top:14px;padding:12px;border:1px solid #cde4df;border-radius:12px">
+    <label><input id="analyticsConsent" type="checkbox"> Share limited usage metrics to improve SpinFamily</label>
+    <p id="analyticsConsentStatus" class="helper" role="status">Off by default. No activity events are being collected.</p>
+    <p class="helper">Optional. Measures screen use, spins, saved plans and upgrade steps. No names, activity text or payment data. You can turn this off and delete previous events.</p>
+  </div>
   <p class="helper">Guest: enjoy the free wheel. A free account saves household plan progress and streaks. Plus adds verified paid features, including custom activities.</p>
 </section>
 
@@ -375,7 +380,7 @@ function sequencePlan(items){
 }
 
 /* Public curated scheduler only: never copy protected private-core algorithms here. */
-let spinCount=0,lastPlanKey='';
+let spinCount=0,lastPlanKey='',spinsSinceAccepted=0;
 function formatClock(date){return date.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});}
 function allActivities(){return Object.entries(defaults).flatMap(([category,items])=>items.map(([icon,name,duration])=>({category,icon,name,duration}))).concat(custom.slice(0,20).map(x=>({category:x.category,icon:'⭐',name:x.name,duration:20})));}
 function sequencePlan(items){
@@ -435,7 +440,7 @@ function showResults(anchor){
  $('resultSubtitle').textContent=currentMember+' choosing · '+formatClock(plan[0].start)+' – '+formatClock(plan[plan.length-1].end)+' · 2-hour plan';
  $('whyText').textContent='Why this plan: The wheel landed on '+labels[anchor]+'. This schedule includes that category, totals exactly 120 minutes using curated activity estimates, and keeps bedtime last when included. You decide whether to use it. No weather, live availability, or personalized AI is used.';
  $('planCards').innerHTML=plan.map(x=>'<article class="plan-card"><div class="plan-icon" aria-hidden="true">'+x.icon+'</div><div><div class="plan-name">'+escapeHtml(x.name)+'</div><div class="plan-meta">'+formatClock(x.start)+'–'+formatClock(x.end)+' · '+labels[x.category]+' · '+x.duration+' min</div></div></article>').join('');
- $('results').classList.add('open');$('acceptBtn').focus();
+ $('results').classList.add('open');window.spinFamilyAnalytics?.track('plan_viewed');$('acceptBtn').focus();
 }
 function spin(){
  const btn=$('spinBtn');if(btn.disabled)return;btn.disabled=true;
@@ -446,7 +451,8 @@ function spin(){
  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
  $('wheel').style.transform='rotate('+rotation+'deg)';
  $('spinStatus').textContent='Spinning up a little family fun…';
- spinCount++;
+ spinCount++;spinsSinceAccepted++;
+ window.spinFamilyAnalytics?.track('wheel_spun');
  setTimeout(()=>{showResults(anchor);btn.disabled=false;$('spinStatus').textContent='The wheel chose '+labels[anchor]+'.';},reduced?0:2400);
 }
 function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML;}
@@ -516,7 +522,7 @@ async function addActivity(e){
  }catch{alert('Activity could not be saved. Verify your Plus subscription and try again.');}
  finally{button.disabled=false;}
 }
-function switchPage(pageId,button){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
+function switchPage(pageId,button){window.spinFamilyAnalytics?.changeScreen(pageId);document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$(pageId).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));button.classList.add('active');window.scrollTo({top:0,behavior:'smooth'});}
 // Anonymous participant context belongs to the active page session only.
 // Never store a child or household identifier in localStorage, cookies, or history.
 const participantAvatars={Mom:'👩',Dad:'👨',Emma:'👧',Lucas:'👦'};
@@ -557,6 +563,7 @@ $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('clic
  $('acceptedStatus').textContent='Saving your selected plan…';
  try{
   await window.spinFamilyHistory.accept(record);
+  window.spinFamilyAnalytics?.track('plan_accepted',{spinsBeforePlan:Math.min(255,spinsSinceAccepted)});spinsSinceAccepted=0;
   $('acceptedStatus').textContent='Plan saved. Mark it complete from Our family progress after you finish the activities.';
  }catch{
   $('acceptedStatus').textContent='The plan could not be saved. No completion has been recorded. Please retry.';
