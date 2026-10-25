@@ -1,7 +1,7 @@
 name: SpinFamily actual browser smoke
 on:
   pull_request:
-    branches: [main, work/household-completion-history-2026-10-16]
+    branches: [main, work/household-completion-history-2026-10-16, work/durable-history-pagination-2026-10-24]
   push:
     branches: [work/original-app-premium-facelift-2026-10-11, work/cinematic-family-art-2026-10-11]
 permissions:
@@ -71,6 +71,8 @@ jobs:
         run: node tests/browser-account-nav.cjs
       - name: Rejected, unknown and successful logout session reconciliation
         run: node tests/browser-logout-state.cjs
+      - name: Candidate scheduling, Plus entitlement-loss, pagination and responsive browser fixture
+        run: node tests/browser-release-integration.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
