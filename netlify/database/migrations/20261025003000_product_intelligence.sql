@@ -1,5 +1,6 @@
 -- Consent-based first-party interaction metrics for authenticated family accounts.
 -- Deliberately no email, names, activity text, IP address or payment payload.
+ALTER TABLE households ADD COLUMN IF NOT EXISTS analytics_opt_in BOOLEAN NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS product_events (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   household_id UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
