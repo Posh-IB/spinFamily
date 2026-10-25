@@ -541,6 +541,7 @@ function selectParticipant(member){
  $('activityParticipantSelect').value=member;
 }
 // Dynamic family profile controls are attached by the family profile module.
+document.querySelectorAll('.nav button').forEach(button=>button.addEventListener('click',()=>switchPage(button.dataset.page,button)));
 $('spinBtn').addEventListener('click',spin);$('againBtn').addEventListener('click',()=>{ $('results').classList.remove('open');setTimeout(spin,80);});$('closeBtn').addEventListener('click',()=>$('results').classList.remove('open'));$('acceptBtn').addEventListener('click',async()=>{
  $('results').classList.remove('open');
  const plan=currentPlan.map(x=>({name:x.name,category:x.category,durationMinutes:x.duration}));
