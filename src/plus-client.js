@@ -223,7 +223,6 @@ window.spinFamilyHistory={
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'accept',plan})});
     if(epoch!==generation||!activeUser)throw new Error('session_changed');
     window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
-    window.spinFamilyAnalytics?.track('plan_accepted');
     return result;
   },
   async complete(id){
