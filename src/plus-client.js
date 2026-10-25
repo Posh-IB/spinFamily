@@ -1,4 +1,5 @@
 import './tomorrow-client.js';
+import './family-profiles.js';
 import { signup, login, logout, getUser, handleAuthCallback, getSettings, oauthLogin } from '@netlify/identity';
 
 const byId = id => document.getElementById(id);
@@ -68,6 +69,7 @@ async function refresh() {
   const user=await getUser();
   if(epoch!==generation)return;
   activeUser=user;sessionUncertain=false;
+  window.spinFamilyProfiles?.activate(Boolean(activeUser));
   checkoutReady=false;portalReady=false;
   isPlus=false;
   resetActivities();
@@ -132,6 +134,7 @@ signOut.addEventListener('click',async()=>{
   if(logoutBusy||authBusy)return;
   const epoch=++generation;
   logoutBusy=true;sessionUncertain=true;isPlus=false;checkoutReady=false;portalReady=false;
+  window.spinFamilyProfiles?.activate(false);
   resetActivities();updateControls();message('Signing out…');
   try{
     await logout();
