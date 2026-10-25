@@ -16,8 +16,9 @@ export default async function handler(request){
  try{
   return await transaction(async db=>{
    // Household ownership is determined from the authenticated server session.
-   const household=(await db.query('SELECT id FROM households WHERE owner_subject=$1 FOR UPDATE',[user.id])).rows[0];
+   const household=(await db.query('SELECT id,analytics_opt_in FROM households WHERE owner_subject=$1 FOR UPDATE',[user.id])).rows[0];
    if(!household)return json({error:'household_not_found'},403);
+   if(household.analytics_opt_in!==true)return json({error:'analytics_opt_in_required'},403);
    // Serialize each household's writes and cap ingestion per UTC day.
    const count=Number((await db.query("SELECT count(*)::int AS n FROM product_events WHERE household_id=$1 AND received_at>=date_trunc('day',now())",[household.id])).rows[0].n);
    if(count+parsed.events.length>policy.MAX_DAILY)return json({error:'analytics_rate_limited'},429);
