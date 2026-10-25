@@ -1,4 +1,5 @@
 import './tomorrow-client.js';
+import './product-analytics.js';
 import { signup, login, logout, getUser, handleAuthCallback, getSettings, oauthLogin } from '@netlify/identity';
 
 const byId = id => document.getElementById(id);
@@ -41,6 +42,7 @@ function resetActivities() {
 function updateControls() {
   window.dispatchEvent(new CustomEvent('spinfamily:entitlement',{detail:{plus:isPlus&&sessionReady()}}));
   const authenticated = Boolean(activeUser)||sessionUncertain;
+  byId('analyticsPreference').hidden=!sessionReady();
   authForm.hidden = authenticated;
   signOut.hidden = !authenticated;
   monthly.hidden = !authenticated || isPlus || !checkoutReady;
@@ -68,6 +70,7 @@ async function refresh() {
   const user=await getUser();
   if(epoch!==generation)return;
   activeUser=user;sessionUncertain=false;
+  window.spinFamilyAnalytics?.setAccount(Boolean(activeUser));
   checkoutReady=false;portalReady=false;
   isPlus=false;
   resetActivities();
@@ -132,6 +135,7 @@ signOut.addEventListener('click',async()=>{
   if(logoutBusy||authBusy)return;
   const epoch=++generation;
   logoutBusy=true;sessionUncertain=true;isPlus=false;checkoutReady=false;portalReady=false;
+  window.spinFamilyAnalytics?.setAccount(false);
   resetActivities();updateControls();message('Signing out…');
   try{
     await logout();
@@ -160,12 +164,14 @@ signOut.addEventListener('click',async()=>{
 for(const [button,period] of [[monthly,'monthly'],[annual,'annual']]){
  button.addEventListener('click',async()=>{
   button.disabled=true;
+  window.spinFamilyAnalytics?.track('upgrade_clicked');
   try{
     const result=await api('/api/billing/checkout',{
       method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({period})
     });
     if(!/^https:\/\/checkout\.stripe\.com\//.test(result.url||''))throw new Error('invalid_checkout');
+    window.spinFamilyAnalytics?.track('checkout_started');
     window.location.assign(result.url);
   }catch{message('Secure checkout is not yet available. No payment was initiated.');}
   finally{button.disabled=false;}
@@ -217,6 +223,7 @@ window.spinFamilyHistory={
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'accept',plan})});
     if(epoch!==generation||!activeUser)throw new Error('session_changed');
     window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
+    window.spinFamilyAnalytics?.track('plan_accepted');
     return result;
   },
   async complete(id){
@@ -226,6 +233,7 @@ window.spinFamilyHistory={
       headers:{'content-type':'application/json'},body:JSON.stringify({action:'complete',id})});
     if(epoch!==generation||!activeUser)throw new Error('session_changed');
     window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:result}));
+    window.spinFamilyAnalytics?.track('plan_completed');
     return result;
   },
   async remove(id){
@@ -246,6 +254,7 @@ window.spinFamilyPlus={
       headers:{'content-type':'application/json'},body:JSON.stringify({name,category,...(planning?{planning}:{})})});
     if(epoch!==generation||!activeUser||!isPlus)throw new Error('session_changed');
     window.dispatchEvent(new CustomEvent('spinfamily:catalog-changed'));
+    window.spinFamilyAnalytics?.track('custom_activity_created');
     return data.activity;
   }
 };
