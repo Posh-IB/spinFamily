@@ -205,6 +205,11 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     #plusAccountPanel{max-width:600px;margin:10px 15px;padding:16px}
     #plusAccountPanel .add-form{max-width:480px}
     #plusAccountPanel button:disabled{opacity:.6;cursor:wait}
+    #deleteAccountBox{margin-top:16px;border-top:1px solid #E2E8F0;padding-top:12px}
+    #deleteAccountBox summary{cursor:pointer;font-weight:700;color:#9B2C2C}
+    #deleteAccountBox label{display:block;font-weight:700;margin:10px 0 4px}
+    #deleteConfirm{border:1px solid #CBD5E0;border-radius:12px;padding:10px;max-width:220px;width:100%}
+    #deleteAccount{display:block;margin-top:10px;background:#9B2C2C;color:#fff}
     .account-bar button:focus-visible,#plusAccountPanel button:focus-visible{outline:3px solid #f58469;outline-offset:2px}
 
 </style>
@@ -238,6 +243,13 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
   <button id="plusMonthly" type="button" hidden>Plus monthly — $4.99</button>
   <button id="plusAnnual" type="button" hidden>Plus yearly — $49</button>
   <button id="plusManage" type="button" hidden>Manage subscription</button>
+  <details id="deleteAccountBox" hidden>
+    <summary>Delete account</summary>
+    <p class="helper">This permanently deletes your login and your family's saved names, plans, completions and custom activities. It can't be undone. If you have Plus, cancel it first under Manage subscription.</p>
+    <label for="deleteConfirm">Type DELETE to confirm</label>
+    <input id="deleteConfirm" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <button id="deleteAccount" type="button">Delete my account and family data</button>
+  </details>
   <p class="helper">Guest: enjoy the free wheel. A free account saves household plan progress and streaks. Plus adds verified paid features, including custom activities.</p>
 </section>
 

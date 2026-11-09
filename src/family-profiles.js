@@ -15,7 +15,7 @@ function render(){
   const row=document.createElement('div');row.className='profile-card';
   const title=document.createElement('strong');title.textContent=avatar(m)+' '+m.name;row.append(title);
   if(signedIn){
-   const input=document.createElement('input');input.value=m.name;input.maxLength=40;input.setAttribute('aria-label','Name for '+m.name);
+   const input=document.createElement('input');input.value=m.name;input.maxLength=40;input.placeholder='Nickname';input.setAttribute('aria-label','Nickname for '+m.name);
    const select=document.createElement('select');select.setAttribute('aria-label','Emoji complexion for '+m.name);
    for(let i=0;i<=5;i++){const opt=document.createElement('option');opt.value=String(i);opt.textContent=i===0?'Default emoji':'Skin tone '+i;select.append(opt);}
    select.value=String(m.tone);
@@ -32,7 +32,7 @@ function render(){
  byId('familyAddChild').hidden=!signedIn||availableChildren.length===0;
  byId('familyAddAdult').hidden=!signedIn||state.some(m=>m.slot==='adult1');
  const adults=state.find(m=>m.slot==='adult1');
- byId('familyProfileHelp').textContent=signedIn?'Two additional child profiles are included with Free. A third adult profile requires Plus.':'Sign in with a Free account to save names and emoji preferences.';
+ byId('familyProfileHelp').textContent=signedIn?'A nickname or first name is all we need. No last names. Two additional child profiles are included with Free. A third adult profile requires Plus.':'Sign in with a Free account to save names and emoji preferences.';
  const bindings=[['members','#members','data-member'],['familyOptions','.family-options','data-family-member']];
  for(const [key,selector,attr] of bindings){
   const holder=document.querySelector(selector);if(!holder)continue;
