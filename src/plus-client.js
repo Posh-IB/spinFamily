@@ -14,6 +14,10 @@ const signOut = byId('plusSignOut');
 const monthly = byId('plusMonthly');
 const annual = byId('plusAnnual');
 const manage = byId('plusManage');
+const deleteBox = byId('deleteAccountBox');
+const deleteConfirm = byId('deleteConfirm');
+const deleteButton = byId('deleteAccount');
+let deleteBusy = false;
 const openSignIn = byId('accountOpenSignIn');
 const openCreate = byId('accountOpenCreate');
 const membershipText = byId('accountMembershipText');
@@ -47,6 +51,8 @@ function updateControls() {
   monthly.hidden = !authenticated || isPlus || !checkoutReady;
   annual.hidden = !authenticated || isPlus || !checkoutReady;
   manage.hidden = !authenticated || !portalReady;
+  deleteBox.hidden = !activeUser || sessionUncertain || logoutBusy;
+  deleteButton.disabled = deleteBusy || authBusy || logoutBusy;
   byId('activityForm').hidden = !isPlus;
   signOut.disabled=logoutBusy||authBusy;
   membershipText.textContent=logoutBusy?'Signing out…':sessionUncertain?'Session could not be verified':!authenticated?'Guest · Progress is not saved':isPlus?'Plus household · Progress saved':'Free household · Progress saved';
@@ -159,6 +165,27 @@ signOut.addEventListener('click',async()=>{
   }finally{
     logoutBusy=false;updateControls();
   }
+});
+deleteButton.addEventListener('click',async()=>{
+  if(deleteBusy||authBusy||logoutBusy||!activeUser)return;
+  if(deleteConfirm.value.trim().toUpperCase()!=='DELETE'){message('Type DELETE in the box to confirm deleting your account.');deleteConfirm.focus();return;}
+  deleteBusy=true;updateControls();message('Deleting your account and family data…');
+  let result;
+  try{
+    result=await api('/api/account/delete',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({confirm:'DELETE'})});
+  }catch(error){
+    deleteBusy=false;updateControls();
+    message(error.message==='cancel_plus_first'?'Your Plus subscription is still active. Cancel it under Manage subscription, then delete your account.':
+      'Your account could not be deleted right now. Nothing was removed. Please try again or email privacy@spinfamilyapp.com.');
+    return;
+  }
+  ++generation;
+  try{await logout();}catch{}
+  activeUser=null;sessionUncertain=false;isPlus=false;checkoutReady=false;portalReady=false;
+  window.spinFamilyProfiles?.activate(false);resetActivities();
+  deleteConfirm.value='';deleteBox.open=false;deleteBusy=false;updateControls();
+  message(result.loginRemoved?'Your account and family data have been deleted.':
+    'Your family data has been deleted. Your login could not be removed automatically. Email privacy@spinfamilyapp.com and we will remove it.');
 });
 for(const [button,period] of [[monthly,'monthly'],[annual,'annual']]){
  button.addEventListener('click',async()=>{
