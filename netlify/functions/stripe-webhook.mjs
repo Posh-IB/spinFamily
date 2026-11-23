@@ -18,6 +18,7 @@ export default async function handler(req,context){
  if(!handled.has(event.type))return respond({received:true});
  const live=policy.stripeLivemode(env.STRIPE_SECRET_KEY);
  if(event.livemode!==live)return respond({error:'environment_mismatch'},400);
+ if(!(await policy.verifyMerchant(stripe,env)))return respond({error:'merchant_account_unavailable'},503);
  let outcome='ignored_irrelevant';
  try{
   const duplicate=await transaction(async client=>{
