@@ -20,6 +20,7 @@ export default async function handler(req,context){
  const price=body?.period==='monthly'?env.SPINFAMILY_PLUS_MONTHLY_PRICE_ID:body?.period==='annual'?env.SPINFAMILY_PLUS_ANNUAL_PRICE_ID:null;
  if(!price)return respond({error:'invalid_plan'},400);
  const stripe=new Stripe(env.STRIPE_SECRET_KEY,{timeout:10000,maxNetworkRetries:1});
+ if(!(await policy.verifyMerchant(stripe,env)))return respond({error:'merchant_account_unavailable'},503);
  try{
   // Persist an attempt BEFORE calling Stripe. After a crash the same idempotency
   // key is reused; a second request cannot create another payable session.
