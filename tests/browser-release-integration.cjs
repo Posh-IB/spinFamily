@@ -19,7 +19,20 @@ const {chromium}=require('playwright');
    await page.locator('#scheduleSelection').selectOption('future');await page.locator('#scheduleDate').fill('2026-10-28');await page.locator('#tomorrowGenerate').click();await page.waitForFunction(()=>window.__options.length===2);assert.equal(await page.evaluate(()=>window.__options[1].schedule.date),'2026-10-28');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
    await page.screenshot({path:'qa-screenshots/scheduling-'+width+'.png',fullPage:true});await page.evaluate(()=>window.dispatchEvent(new CustomEvent('spinfamily:entitlement',{detail:{plus:false}})));assert.equal(await page.locator('#tomorrowPanel').isVisible(),false);assert.equal(await page.locator('#tomorrowResults article').count(),0);out.local.push({width,status:'passed',scope:'UI fixture; actual Identity and PostgreSQL not exercised'});await page.close();
   }
-  const page=await browser.newPage({viewport:{width:390,height:900}});await page.goto('https://deploy-preview-14--spinfamily-app.netlify.app/',{waitUntil:'domcontentloaded',timeout:20000});assert.equal(await page.locator('#spinBtn').count(),1);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:'qa-screenshots/hosted-guest-390.png',fullPage:true});out.hosted.push({status:'passed',scope:'Older deployed commit; anonymous page only; no account or household writes'});await page.close();
+  // Hosted preview may be protected by Netlify SSO. Never bypass access controls,
+  // and never mistake a login page for the real app. Explicitly configure an
+  // accessible QA_HOSTED_URL only in a job that has legitimate preview access.
+  if(process.env.QA_HOSTED_URL){
+   const target=new URL(process.env.QA_HOSTED_URL);
+   if(target.protocol!=='https:'||!(target.hostname==='app.spinfamilyapp.com'||target.hostname.endsWith('.netlify.app')))throw new Error('untrusted_qa_hosted_url');
+   const page=await browser.newPage({viewport:{width:390,height:900}});
+   await page.goto(target.toString(),{waitUntil:'domcontentloaded',timeout:20000});
+   assert.equal(await page.locator('#spinBtn').count(),1,'Authenticated preview is not serving the SpinFamily app');
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   await page.screenshot({path:'qa-screenshots/hosted-guest-390.png',fullPage:true});
+   out.hosted.push({status:'passed',scope:'Accessible authorized hosted guest preview; no payment or household write'});
+   await page.close();
+  }else out.hosted.push({status:'not_run',scope:'Netlify preview is SSO protected; use authorized hosted QA job separately'});
  }catch(e){out.errors.push(String(e.stack||e));process.exitCode=1;}
  finally{fs.writeFileSync('qa-screenshots/release-browser.json',JSON.stringify(out,null,2));console.log(JSON.stringify(out));server.closeAllConnections();await new Promise(r=>server.close(r));if(browser)await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
