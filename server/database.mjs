@@ -20,6 +20,7 @@ export function environment(context) {
   if(env.CONTEXT==='production'){
     // Production bindings are explicit, so preview settings cannot be reused.
     for(const [name,productionName] of Object.entries({
+      STRIPE_SECRET_KEY:'SPINFAMILY_PRODUCTION_STRIPE_SECRET_KEY',
       STRIPE_WEBHOOK_SECRET:'SPINFAMILY_PRODUCTION_WEBHOOK_SECRET',
       SPINFAMILY_PLUS_MONTHLY_PRICE_ID:'SPINFAMILY_PRODUCTION_MONTHLY_PRICE_ID',
       SPINFAMILY_PLUS_ANNUAL_PRICE_ID:'SPINFAMILY_PRODUCTION_ANNUAL_PRICE_ID',
