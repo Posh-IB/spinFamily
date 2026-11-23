@@ -3,7 +3,8 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 test('production bindings cannot fall back to preview prices, origin or webhook secret',async()=>{
  const {environment}=await import('../server/database.mjs');
- const values={STRIPE_SECRET_KEY:'rk_live_synthetic',STRIPE_WEBHOOK_SECRET:'whsec_preview',
+ const values={STRIPE_SECRET_KEY:'rk_test_synthetic',STRIPE_WEBHOOK_SECRET:'whsec_preview',
+  SPINFAMILY_PRODUCTION_STRIPE_SECRET_KEY:'rk_live_synthetic',SPINFAMILY_PRODUCTION_STRIPE_ACCOUNT_ID:'acct_1UehvfCqVYNS8CiE',
   SPINFAMILY_PLUS_MONTHLY_PRICE_ID:'price_previewMonthly',SPINFAMILY_PLUS_ANNUAL_PRICE_ID:'price_previewAnnual',
   SPINFAMILY_CHECKOUT_ORIGIN:'https://preview.example',SPINFAMILY_PRODUCTION_WEBHOOK_SECRET:'whsec_production',
   SPINFAMILY_PRODUCTION_MONTHLY_PRICE_ID:'price_productionMonthly',SPINFAMILY_PRODUCTION_ANNUAL_PRICE_ID:'price_productionAnnual',
@@ -12,6 +13,9 @@ test('production bindings cannot fall back to preview prices, origin or webhook 
  globalThis.Netlify={env:{get:key=>values[key]}};
  try{
   const live=environment({deploy:{context:'production'}}),preview=environment({deploy:{context:'deploy-preview'}});
+  assert.equal(live.STRIPE_SECRET_KEY,'rk_live_synthetic');
+  assert.equal(preview.STRIPE_SECRET_KEY,'rk_test_synthetic');
+  assert.equal(live.SPINFAMILY_MERCHANT_ACCOUNT_ID,'acct_1UehvfCqVYNS8CiE');
   assert.equal(live.STRIPE_WEBHOOK_SECRET,'whsec_production');
   assert.equal(live.SPINFAMILY_PLUS_MONTHLY_PRICE_ID,'price_productionMonthly');
   assert.equal(live.SPINFAMILY_PLUS_ANNUAL_PRICE_ID,'price_productionAnnual');
