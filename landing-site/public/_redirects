@@ -1,0 +1,15 @@
+# The app moved to app.spinfamilyapp.com. Old app URLs keep working.
+/api/*            https://app.spinfamilyapp.com/api/:splat   301!
+/assets/*         https://app.spinfamilyapp.com/assets/:splat 301!
+/app              https://app.spinfamilyapp.com/              301!
+/app/*            https://app.spinfamilyapp.com/:splat        301!
+# Stripe checkout/portal returns that were addressed to the old origin
+/  billing=:b     https://app.spinfamilyapp.com/?billing=:b   301!
+/  session_id=:s  https://app.spinfamilyapp.com/?session_id=:s 301!
+http://www.spinfamilyapp.com/*  https://spinfamilyapp.com/:splat 301!
+https://www.spinfamilyapp.com/* https://spinfamilyapp.com/:splat 301!
+# SpinFamily is a Rootlayer product and uses Rootlayer's privacy policy.
+# 302 (temporary) until that page's final URL is confirmed; switch to 301 after.
+/privacy          https://rootlayer.software/privacy           302
+# Browsers request /favicon.ico at the root
+/favicon.ico      /icons/favicon.ico                           200

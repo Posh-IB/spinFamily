@@ -1,0 +1,23 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync, readdirSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {parsePilot,config,welcomeMessage,processWelcome,keyFor,SITE_ID,MAILBOX} from '../lib/pilot-welcome.mjs';
+const data={'form-name':'pilot',source:'direct',company:'',first_name:'Test Parent',email:'test@example.com',children_under_10:'2',consent:'yes'};
+const vars={SITE_ID,SMTP_HOST:'smtp.purelymail.com',SMTP_PORT:'465',SMTP_USER:MAILBOX,SMTP_PASSWORD:'test-only-not-real',PILOT_EMAIL_FROM:`SpinFamily <${MAILBOX}>`,PILOT_EMAIL_REPLY_TO:MAILBOX};
+function harness({fail=false, env=vars, statusFail=false}={}) {
+ let state=new Map(),sent=0;
+ const store={async setJSON(k,v,o){if(o.onlyIfNew&&state.has(k))return {modified:false};if(o.onlyIfMatch&&state.get(k)?.etag!==o.onlyIfMatch)return {modified:false};if(statusFail&&o.onlyIfMatch)throw Error('mock storage');let etag=String((state.size+1))+'-'+v.state;state.set(k,{...v,etag});return {modified:true,etag};}};
+ return {state,get sent(){return sent},deps:{env:k=>env[k],storeFactory:()=>store,send:async (_,m)=>{sent++;if(fail)throw Error('mock SMTP');return {accepted:[m.to.address]};}}};
+}
+test('source byte integrity and expected form fields',()=>{const m=JSON.parse(readFileSync(new URL('../source-manifest.json',import.meta.url)));for(const [path,sha] of Object.entries(m.files)){const content=readFileSync(new URL('../public/'+path,import.meta.url));assert.equal(createHash('sha256').update(content).digest('hex'),sha,path);}const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');for(const s of ['name="pilot"','data-netlify="true"','name="consent"','name="email"','name="source"'])assert.ok(html.includes(s));});
+test('valid and normalized parent',()=>assert.deepEqual(parsePilot({...data,email:' Test@EXAMPLE.COM '}),{email:'test@example.com',firstName:'Test Parent'}));
+test('modern payload without form name accepted for pilot schema',()=>{const d={...data};delete d['form-name'];assert.ok(parsePilot(d));});
+test('consent, spam, other form, malformed recipient and missing fields rejected',()=>{for(const d of [{consent:'no'},{company:'bot'},{'form-name':'other'},{email:'a@example.com,b@example.com'},{email:'x\r\n@example.com'},{first_name:'<script>'},{children_under_10:''},{source:undefined}])assert.equal(parsePilot({...data,...d}),null);});
+test('configuration is pinned to production site and authenticated TLS',()=>{assert.equal(config(k=>vars[k]).secure,true);assert.equal(config(k=>k==='SITE_ID'?'other':vars[k]),null);assert.equal(config(k=>k==='SMTP_PASSWORD'?'':vars[k]),null);assert.equal(config(k=>k==='SMTP_HOST'?'wrong':vars[k]),null);});
+test('welcome is transactional, one recipient, no account claim',()=>{const m=welcomeMessage(parsePilot(data));assert.equal(m.to.address,'test@example.com');assert.equal(m.replyTo,MAILBOX);assert.match(m.text,/Hi Test Parent/);assert.match(m.text,/registration has been received/);assert.doesNotMatch(m.text,/account (is|has been) (active|activated)/i);});
+test('normal send records SMTP acceptance',async()=>{const h=harness();assert.equal(await processWelcome(data,h.deps),'smtp_accepted');assert.equal(h.sent,1);assert.equal(h.state.get(keyFor(data.email)).state,'smtp_accepted');});
+test('parallel duplicate events send at most once',async()=>{const h=harness();const r=await Promise.all([processWelcome(data,h.deps),processWelcome({...data,email:'TEST@example.com'},h.deps)]);assert.deepEqual(r.sort(),['duplicate','smtp_accepted']);assert.equal(h.sent,1);});
+test('missing production secret blocks before store or send',async()=>{const h=harness({env:{...vars,SMTP_PASSWORD:''}});assert.equal(await processWelcome(data,h.deps),'skipped_config');assert.equal(h.sent,0);assert.equal(h.state.size,0);});
+test('SMTP failure is held for manual review with no auto retry',async()=>{const h=harness({fail:true});await assert.rejects(processWelcome(data,h.deps));assert.equal(h.state.get(keyFor(data.email)).state,'uncertain');assert.equal(await processWelcome(data,h.deps),'duplicate');assert.equal(h.sent,1);});
+test('post-acceptance ledger failure prevents repeat send',async()=>{const h=harness({statusFail:true});await assert.rejects(processWelcome(data,h.deps));assert.equal(h.state.get(keyFor(data.email)).state,'claimed');assert.equal(await processWelcome(data,h.deps),'duplicate');assert.equal(h.sent,1);});
