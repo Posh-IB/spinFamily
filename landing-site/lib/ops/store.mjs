@@ -19,6 +19,11 @@ export function blobAdapter(blobStore) {
       return { modified: r?.modified !== false, etag: r?.etag };
     },
     async del(key) { await blobStore.delete(key); },
+    async putFile(key, bytes, metadata) { await blobStore.set(key, bytes, { metadata }); },
+    async getFile(key) {
+      const r = await blobStore.getWithMetadata(key, { type: 'arrayBuffer' });
+      return r ? { bytes: new Uint8Array(r.data), metadata: r.metadata } : null;
+    },
     async list(prefix) {
       const keys = [];
       for await (const page of blobStore.list({ prefix, paginate: true })) for (const b of page.blobs) keys.push(b.key);
@@ -41,6 +46,8 @@ export function memoryStore() {
       return { modified: true, etag };
     },
     async del(key) { m.delete(key); },
+    async putFile(key, bytes, metadata) { m.set(key, { value: { file: true }, bytes: new Uint8Array(bytes), metadata, etag: `e${++n}` }); },
+    async getFile(key) { const e = m.get(key); return e?.bytes ? { bytes: e.bytes, metadata: e.metadata } : null; },
     async list(prefix) { return [...m.keys()].filter(k => k.startsWith(prefix)).sort(); },
   };
 }

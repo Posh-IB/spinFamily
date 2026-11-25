@@ -100,7 +100,7 @@ async function consumeSignInLink() {
 // ---------- layout ----------
 const NAV = [
   ['dashboard', 'Today', 'dashboard.view'], ['participants', 'Participants', 'participants.view.assigned'], ['followups', 'Follow-ups', 'followups.manage'],
-  ['outreach', 'Outreach log', 'outreach.record'], ['relationships', 'Relationships', 'relationships.record'], ['resources', 'Materials', 'resources.view'], ['team', 'Team & security', null],
+  ['outreach', 'Outreach log', 'outreach.record'], ['relationships', 'Relationships', 'relationships.record'], ['docs', 'Company docs', 'resources.view'], ['team', 'Team & security', null],
 ];
 function layout(active, ...content) {
   const nav = h('nav', { class: 'side', 'aria-label': 'Workspace' }, NAV.filter(([, , p]) => !p || can(p)).map(([id, label]) => h('a', { href: '#/' + id, 'aria-current': active === id ? 'page' : null, onclick: () => nav.classList.remove('open') }, label)));
@@ -247,12 +247,74 @@ async function viewRelationship(id) {
     edit, h('h2', {}, 'Contact log'), log, (r.log || []).length ? h('ul', {}, [...r.log].reverse().map(x => h('li', {}, `${fmtDate(x.at)} · ${x.kind}: ${x.summary}`))) : h('p', { class: 'muted' }, 'Nothing logged yet.'));
 }
 
+const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+const CAT = { outreach: 'Outreach', brand: 'Brand', research: 'Research', training: 'Training', policy: 'Policies', meeting: 'Meetings', other: 'Other' };
+function readBase64(file) {
+  return new Promise((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result).split(',')[1] || ''); fr.onerror = () => reject(new Error('Could not read that file.')); fr.readAsDataURL(file); });
+}
+function audienceLabel(r, members) {
+  const a = r.audience || 'team';
+  if (a === 'team') return 'Whole team';
+  if (a === 'founder') return 'Dion only';
+  return 'Shared with: ' + a.map(id => members[id] || 'former member').join(', ');
+}
+
 async function viewResources() {
-  const d = await api('GET', 'resources');
   const manage = can('resources.manage');
-  layout('resources', h('h1', {}, 'Materials'), h('p', { class: 'sub' }, 'Use approved materials as-is. Anything pending review needs Dion\'s OK first.'),
-    h('div', { class: 'grid' }, d.resources.map(r => h('div', { class: 'card' }, h('span', { class: 'tag ' + r.approval }, L(r.approval)), h('h3', {}, h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer' }, r.title)), h('p', { class: 'muted' }, r.intendedUse),
-      manage ? h('div', { class: 'row' }, select('approval', d.approvals, r.approval, { 'aria-label': 'Approval for ' + r.title, onchange: async e => { await api('PATCH', 'resources/' + r.id, { approval: e.target.value }); toast('Updated'); } })) : null))));
+  const [d, team] = await Promise.all([api('GET', 'resources'), manage ? api('GET', 'team').catch(() => null) : null]);
+  const members = Object.fromEntries((team?.members || []).map(m => [m.id, m.name]));
+  const others = (team?.members || []).filter(m => m.status !== 'revoked' && m.id !== ME.member.id);
+
+  // Upload form
+  const audienceBox = manage ? h('fieldset', { class: 'card' }, h('legend', {}, 'Who can see it'),
+    h('label', { class: 'row' }, h('input', { type: 'radio', name: 'audienceMode', value: 'team', checked: true }), 'Whole team'),
+    h('label', { class: 'row' }, h('input', { type: 'radio', name: 'audienceMode', value: 'some' }), 'Only these people:'),
+    others.map(m => h('label', { class: 'row' }, h('input', { type: 'checkbox', name: 'audienceMember', value: m.id }), m.name)),
+    h('label', { class: 'row' }, h('input', { type: 'radio', name: 'audienceMode', value: 'founder' }), 'Just me for now')) : h('p', { class: 'muted' }, 'Your upload goes to Dion to review. He decides who else sees it.');
+  const form = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(form, async () => {
+    const file = form.querySelector('input[type=file]').files[0];
+    if (!file) throw new Error('Choose a file first.');
+    if (file.size > d.maxFileBytes) throw new Error('That file is over 4 MB. Compress it or add a Drive link instead.');
+    const f = formData(form);
+    const body = { title: f.title || file.name.replace(/\.[^.]+$/, ''), intendedUse: f.intendedUse, category: f.category, fileName: file.name, dataBase64: await readBase64(file) };
+    if (manage) {
+      const mode = form.querySelector('input[name=audienceMode]:checked').value;
+      body.audience = mode === 'some' ? [...form.querySelectorAll('input[name=audienceMember]:checked')].map(x => x.value) : mode;
+      if (mode === 'some' && !body.audience.length) throw new Error('Pick at least one person, or choose Whole team.');
+      body.approval = f.approval; body.notify = !!form.querySelector('input[name=notify]:checked');
+    }
+    const r = await api('POST', 'resources/upload', body);
+    toast(r.notified ? `Uploaded. ${r.notified} ${r.notified === 1 ? 'person was' : 'people were'} emailed.` : 'Uploaded');
+    viewResources();
+  }); } },
+    h('label', {}, 'File', h('span', { class: 'hint' }, 'PDF, Word, Excel, PowerPoint, PNG, JPG or WebP. Up to 4 MB.'), h('input', { type: 'file', accept: '.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp', required: true })),
+    h('label', {}, 'Title', h('input', { name: 'title', maxlength: 120, placeholder: 'Uses the file name if left blank' })),
+    h('label', {}, 'What it\'s for', h('input', { name: 'intendedUse', maxlength: 300, placeholder: 'e.g. Hand to Denise at the Parenting Resource Center' })),
+    h('label', {}, 'Category', select('category', d.categories, 'outreach')),
+    manage ? h('label', {}, 'Approval', h('span', { class: 'hint' }, 'Approved means OK to share outside the team.'), select('approval', d.approvals.filter(a => a !== 'retired'), 'approved')) : null,
+    audienceBox,
+    manage ? h('label', { class: 'row' }, h('input', { type: 'checkbox', name: 'notify', checked: true }), 'Email the people it\'s shared with') : null,
+    h('button', { class: 'btn', type: 'submit' }, 'Upload'));
+
+  const card = r => h('div', { class: 'card' },
+    h('div', { class: 'row' }, h('span', { class: 'tag ' + r.approval }, L(r.approval)), h('span', { class: 'tag' }, CAT[r.category] || 'Other'), r.kind === 'file' ? h('span', { class: 'tag' }, (r.fileName.split('.').pop() || '').toUpperCase() + ' · ' + fmtSize(r.size)) : h('span', { class: 'tag' }, 'Link')),
+    h('h3', {}, r.kind === 'file' ? h('a', { href: `/operations/api/resources/${r.id}/file` }, r.title) : h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer' }, r.title)),
+    r.intendedUse ? h('p', { class: 'muted' }, r.intendedUse) : null,
+    h('p', { class: 'muted' }, [r.uploadedByName ? `Added by ${r.uploadedByName}` : null, r.createdAt ? fmtDate(r.createdAt) : null, manage ? audienceLabel(r, members) : null].filter(Boolean).join(' · ')),
+    r.kind === 'link' && !manage ? h('p', { class: 'muted' }, 'Opens in Google Drive. Ask Dion if it says you need access.') : null,
+    manage ? h('div', { class: 'row' },
+      select('approval', d.approvals, r.approval, { 'aria-label': 'Approval for ' + r.title, onchange: async e => { await api('PATCH', 'resources/' + r.id, { approval: e.target.value }); toast('Updated'); viewResources(); } }),
+      h('select', { 'aria-label': 'Who can see ' + r.title, onchange: async e => { const v = e.target.value; const audience = v.startsWith('m:') ? [v.slice(2)] : v; const res = await api('PATCH', 'resources/' + r.id, { audience, notify: true }); toast(res.notified ? 'Shared and emailed' : 'Updated'); viewResources(); } },
+        h('option', { value: '', selected: true, disabled: true }, 'Share with…'), h('option', { value: 'team' }, 'Whole team'), h('option', { value: 'founder' }, 'Just me'), others.map(m => h('option', { value: 'm:' + m.id }, 'Only ' + m.name)))) : null);
+
+  const pending = manage ? d.resources.filter(r => r.approval === 'pending_review' && r.uploadedBy && r.uploadedBy !== ME.member.id) : [];
+  const groups = {};
+  for (const r of d.resources) (groups[r.category || 'other'] ||= []).push(r);
+  layout('docs', h('h1', {}, 'Company docs'),
+    h('p', { class: 'sub' }, manage ? 'Upload files and choose who on the team sees them. Use approved docs as-is outside the team; anything pending needs your OK first.' : 'Docs Dion has shared with you. Approved ones are OK to share outside the team; anything pending review needs Dion\'s OK first.'),
+    pending.length ? h('div', { class: 'notice warn' }, `${pending.length} upload${pending.length > 1 ? 's' : ''} from the team waiting for your review.`) : null,
+    h('details', { open: d.resources.length === 0 }, h('summary', {}, manage ? 'Upload a doc' : 'Send Dion a doc'), form),
+    d.resources.length ? h('div', {}, Object.keys(CAT).filter(c => groups[c]).flatMap(c => [h('h2', {}, CAT[c]), h('div', { class: 'grid' }, groups[c].map(card))])) : h('p', { class: 'muted' }, 'Nothing shared yet.'));
 }
 
 async function viewTeam() {
@@ -305,7 +367,7 @@ async function route() {
     else if (view === 'followups') await viewFollowups();
     else if (view === 'outreach') await viewOutreach();
     else if (view === 'relationships') await (id ? viewRelationship(id) : viewRelationships());
-    else if (view === 'resources') await viewResources();
+    else if (view === 'docs' || view === 'resources') await viewResources();
     else if (view === 'team') await viewTeam();
     else await viewDashboard();
     document.getElementById('main')?.focus();

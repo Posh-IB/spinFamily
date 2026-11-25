@@ -11,6 +11,8 @@ import { getAll } from './store.mjs';
 export const FOUNDER_EMAIL = 'dion@spinfamilyapp.com';
 export const PRODUCTION_ORIGIN = 'https://spinfamilyapp.com';
 const MAX_BODY = 32 * 1024;
+export const MAX_FILE_BYTES = 4 * 1024 * 1024; // Netlify functions accept about 6 MB per request; base64 adds a third
+const MAX_UPLOAD_BODY = 6 * 1024 * 1024;
 
 // ---- Vocabularies (lifecycle states are kept separate on purpose: see spec section 8) ----
 export const REFS = ['instagram', 'facebook', 'fbgroups', 'tiktok', 'lindsey', 'campus', 'campus-groups', 'direct', 'other', 'unknown'];
@@ -144,8 +146,11 @@ export async function handle(req, deps) {
       if (o && o !== origin) return fail(403, 'bad_origin', 'Request blocked.');
       if (req.headers.get('x-sf-ops') !== '1') return fail(403, 'missing_header', 'Request blocked.');
       if (!String(req.headers.get('content-type') || '').startsWith('application/json')) return fail(415, 'json_only', 'Send JSON.');
+      const limit = path === 'resources/upload' ? MAX_UPLOAD_BODY : MAX_BODY;
+      const declared = Number(req.headers.get('content-length') || 0);
+      if (declared > limit) return fail(413, 'too_large', 'That file or request is too large.');
       const raw = await req.text();
-      if (raw.length > MAX_BODY) return fail(413, 'too_large', 'Request is too large.');
+      if (raw.length > limit) return fail(413, 'too_large', 'That file or request is too large.');
       try { body = raw ? JSON.parse(raw) : {}; } catch { return fail(400, 'bad_json', 'Invalid JSON.'); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400, 'bad_json', 'Invalid JSON.');
     }
@@ -561,7 +566,7 @@ async function relationships(parts, method, body, env) {
   return fail(404, 'not_found', 'Not found.');
 }
 
-// ---------- Outreach materials ----------
+// ---------- Company docs: shared links and uploaded files ----------
 export const DEFAULT_RESOURCES = [
   { title: 'SpinFamily Social & Campus Guide', url: 'https://drive.google.com/file/d/1HL0obgvYmgcNOFAXPkuftEjqugN7zvV_/view', intendedUse: 'Lindsey\'s working guide: role, brand rules, tracking links, content plan.', approval: 'approved' },
   { title: 'Cincinnati State campus flyer', url: 'https://drive.google.com/file/d/1s7SGFY1Q6evgrE3w6fE2IrgBPeqFEI3I/view', intendedUse: 'Campus posting once Student Activities approves. QR: ?ref=campus.', approval: 'approved' },
@@ -570,34 +575,142 @@ export const DEFAULT_RESOURCES = [
   { title: 'SpinFamily logo (color, transparent)', url: 'https://drive.google.com/file/d/1_TOgR0e9UUxCME81dylzCXPQXli2pT5e/view', intendedUse: 'Social posts and flyers on light backgrounds.', approval: 'approved' },
   { title: 'SpinFamily logo (reverse, transparent)', url: 'https://drive.google.com/file/d/1Dre0e_D1tXomKmBVRyHl1EItbcwh0b1S/view', intendedUse: 'Social posts and flyers on teal or dark backgrounds.', approval: 'approved' },
 ];
+export const DOC_CATEGORIES = ['outreach', 'brand', 'research', 'training', 'policy', 'meeting', 'other'];
+
+// File types are identified from the file's own bytes, not its name. Nothing that can run in a browser is accepted.
+const FILE_TYPES = [
+  { ext: ['pdf'], type: 'application/pdf', test: b => b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 },
+  { ext: ['png'], type: 'image/png', test: b => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { ext: ['jpg', 'jpeg'], type: 'image/jpeg', test: b => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { ext: ['webp'], type: 'image/webp', test: b => b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45 },
+  { ext: ['docx'], type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', test: b => b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4 },
+  { ext: ['xlsx'], type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', test: b => b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4 },
+  { ext: ['pptx'], type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', test: b => b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4 },
+];
+export function identifyFile(fileName, bytes) {
+  const ext = String(fileName).toLowerCase().split('.').pop();
+  const t = FILE_TYPES.find(f => f.ext.includes(ext));
+  return t && bytes.length >= 12 && t.test(bytes) ? { type: t.type, ext } : null;
+}
+function cleanFileName(name) {
+  const base = String(name || 'file').split(/[\\/]/).pop().normalize('NFKD').replace(/[^\w.\- ]+/g, '').replace(/\s+/g, ' ').trim();
+  return (base || 'file').slice(-120);
+}
+
+// Who can see a document: the whole team, the founder only, or named people. The uploader always can.
+function canSee(r, env) {
+  if (env.has('resources.manage')) return true;
+  if (r.uploadedBy === env.member.id) return true;
+  if (r.approval === 'retired') return false;
+  const a = r.audience || 'team';
+  return a === 'team' || (Array.isArray(a) && a.includes(env.member.id));
+}
+async function parseAudience(v, env) {
+  if (v === undefined || v === null || v === '' || v === 'team') return 'team';
+  if (v === 'founder') return 'founder';
+  if (!Array.isArray(v) || v.length > 50) throw new Invalid('Choose who can see this');
+  const ids = [...new Set(v.map(String))];
+  for (const id of ids) { const m = await env.store.get(`members/${id}`); if (!m || m.status === 'revoked') throw new Invalid('Unknown team member'); }
+  return ids;
+}
+async function audienceMembers(env, audience) {
+  const all = (await getAll(env.store, 'members/')).filter(m => m.status !== 'revoked');
+  if (audience === 'team') return all;
+  if (audience === 'founder') return all.filter(m => m.role === 'founder');
+  return all.filter(m => audience.includes(m.id) || m.role === 'founder');
+}
+async function notifyShare(env, doc, recipients) {
+  let sent = 0;
+  for (const m of recipients) {
+    if (m.id === env.member.id || !['active', 'invited'].includes(m.status)) continue;
+    const text = `Hi ${m.name.split(' ')[0]},\n\n${env.member.name} shared "${doc.title}" with you in SpinFamily Operations.\n\n${doc.intendedUse ? doc.intendedUse + '\n\n' : ''}Open Company docs: ${env.origin}/operations/#/docs\n\nYou'll need to be signed in.\n\nSpinFamily Operations\nA Rootlayer Software LLC product.`;
+    try { await env.sendMail({ from: { name: 'SpinFamily Operations', address: env.mailbox }, replyTo: env.mailbox, to: { address: m.email, name: '' }, subject: `Shared with you: ${doc.title}`.slice(0, 150), text, disableFileAccess: true, disableUrlAccess: true }); sent++; }
+    catch { await audit(env, env.member.id, 'docs.notify_failed', doc.id); }
+  }
+  return sent;
+}
+const publicDoc = r => { const { fileKey, ...rest } = r; return rest; };
+
 async function resources(parts, method, body, env) {
   const { store, member: me } = env;
   env.need('resources.view');
   let list = await getAll(store, 'resources/');
   if (!list.length && !(await store.get('meta/resources-seeded'))) {
     const now = new Date(env.now()).toISOString();
-    for (const r of DEFAULT_RESOURCES) { const x = { id: newId('res'), ...r, createdAt: now, updatedAt: now }; await store.set(`resources/${x.id}`, x); }
+    for (const r of DEFAULT_RESOURCES) { const x = { id: newId('res'), kind: 'link', category: r.title.includes('logo') ? 'brand' : 'outreach', audience: 'team', ...r, createdAt: now, updatedAt: now }; await store.set(`resources/${x.id}`, x); }
     await store.set('meta/resources-seeded', { at: now });
     list = await getAll(store, 'resources/');
   }
   if (method === 'GET' && !parts.length) {
-    const visible = env.has('resources.manage') ? list : list.filter(r => r.approval !== 'retired');
-    return json({ resources: visible.sort((a, b) => a.title.localeCompare(b.title)), approvals: APPROVAL });
+    const visible = list.filter(r => canSee(r, env)).map(publicDoc).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return json({ resources: visible, approvals: APPROVAL, categories: DOC_CATEGORIES, maxFileBytes: MAX_FILE_BYTES });
   }
+
+  // Upload a file. Coordinators' uploads go to the founder for review; the founder chooses who sees theirs.
+  if (method === 'POST' && parts[0] === 'upload') {
+    env.need('resources.upload');
+    const isFounder = me.role === 'founder';
+    if (isFounder) env.need('resources.manage');
+    const title = text(body.title, 'Title', 120, { required: true });
+    const fileName = cleanFileName(text(body.fileName, 'File name', 200, { required: true }));
+    if (typeof body.dataBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.dataBase64)) throw new Invalid('The file did not upload correctly. Try again.');
+    const bytes = new Uint8Array(Buffer.from(body.dataBase64, 'base64'));
+    if (!bytes.length) throw new Invalid('That file is empty.');
+    if (bytes.length > MAX_FILE_BYTES) throw new Invalid('That file is over 4 MB. Compress it or share a Drive link instead.');
+    const kind = identifyFile(fileName, bytes);
+    if (!kind) throw new Invalid('Upload a PDF, Word, Excel or PowerPoint file, or a PNG, JPG or WebP image.');
+    const audience = isFounder ? await parseAudience(body.audience, env) : 'founder';
+    const now = new Date(env.now()).toISOString();
+    const id = newId('res');
+    const r = {
+      id, kind: 'file', title, intendedUse: text(body.intendedUse, 'What it\'s for', 300),
+      category: oneOf(body.category, 'category', DOC_CATEGORIES, 'other'),
+      approval: isFounder ? oneOf(body.approval, 'approval', APPROVAL, 'approved') : 'pending_review',
+      audience, fileName, contentType: kind.type, size: bytes.length, fileKey: `files/${id}`,
+      uploadedBy: me.id, uploadedByName: me.name, createdAt: now, updatedAt: now,
+    };
+    await store.putFile(r.fileKey, bytes, { resourceId: id, contentType: kind.type });
+    await store.set(`resources/${id}`, r);
+    await audit(env, me.id, 'docs.uploaded', id, { size: bytes.length, audience: Array.isArray(audience) ? 'named' : audience });
+    let notified = 0;
+    if (body.notify === true || !isFounder) notified = await notifyShare(env, r, await audienceMembers(env, audience));
+    return json({ resource: publicDoc(r), notified }, 201);
+  }
+
+  if (parts[0] && parts[1] === 'file' && method === 'GET') {
+    const r = await store.get(`resources/${parts[0]}`);
+    if (!r || r.kind !== 'file' || !canSee(r, env)) return fail(404, 'not_found', 'Not found.');
+    const f = await store.getFile(r.fileKey);
+    if (!f) return fail(404, 'not_found', 'File missing.');
+    await audit(env, me.id, 'docs.downloaded', r.id);
+    return new Response(f.bytes, { status: 200, headers: {
+      'content-type': r.contentType, 'content-length': String(f.bytes.length),
+      'content-disposition': `attachment; filename="${r.fileName.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(r.fileName)}`,
+      'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'content-security-policy': "sandbox; default-src 'none'", 'x-robots-tag': 'noindex, nofollow',
+    } });
+  }
+
   env.need('resources.manage');
   if (method === 'POST' && !parts.length) {
     const now = new Date(env.now()).toISOString();
-    const r = { id: newId('res'), title: text(body.title, 'title', 120, { required: true }), url: url(body.url, 'link'), intendedUse: text(body.intendedUse, 'intended use', 300), approval: oneOf(body.approval, 'approval', APPROVAL, 'draft'), createdAt: now, updatedAt: now };
-    await store.set(`resources/${r.id}`, r); await audit(env, me.id, 'resource.created', r.id);
-    return json({ resource: r }, 201);
+    const r = { id: newId('res'), kind: 'link', title: text(body.title, 'title', 120, { required: true }), url: url(body.url, 'link'), intendedUse: text(body.intendedUse, 'intended use', 300), category: oneOf(body.category, 'category', DOC_CATEGORIES, 'other'), approval: oneOf(body.approval, 'approval', APPROVAL, 'draft'), audience: await parseAudience(body.audience, env), uploadedBy: me.id, uploadedByName: me.name, createdAt: now, updatedAt: now };
+    await store.set(`resources/${r.id}`, r); await audit(env, me.id, 'docs.link_added', r.id);
+    if (body.notify === true) await notifyShare(env, r, await audienceMembers(env, r.audience));
+    return json({ resource: publicDoc(r) }, 201);
   }
   if (method === 'PATCH' && parts[0]) {
     const r = await store.get(`resources/${parts[0]}`); if (!r) return fail(404, 'not_found', 'Not found.');
+    const before = JSON.stringify(r.audience || 'team');
     if (body.approval !== undefined) r.approval = oneOf(body.approval, 'approval', APPROVAL);
     if (body.intendedUse !== undefined) r.intendedUse = text(body.intendedUse, 'intended use', 300);
+    if (body.title !== undefined) r.title = text(body.title, 'title', 120, { required: true });
+    if (body.category !== undefined) r.category = oneOf(body.category, 'category', DOC_CATEGORIES);
+    if (body.audience !== undefined) r.audience = await parseAudience(body.audience, env);
     r.updatedAt = new Date(env.now()).toISOString();
-    await store.set(`resources/${r.id}`, r); await audit(env, me.id, 'resource.updated', r.id, { approval: r.approval });
-    return json({ resource: r });
+    await store.set(`resources/${r.id}`, r); await audit(env, me.id, 'docs.updated', r.id, { approval: r.approval });
+    let notified = 0;
+    if (body.notify === true && JSON.stringify(r.audience) !== before) notified = await notifyShare(env, r, await audienceMembers(env, r.audience));
+    return json({ resource: publicDoc(r), notified });
   }
   return fail(404, 'not_found', 'Not found.');
 }

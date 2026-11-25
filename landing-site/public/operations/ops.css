@@ -69,3 +69,8 @@ details summary{cursor:pointer;font-weight:800}
   .menu{display:inline-flex}
   .who .email{display:none}
 }
+fieldset{border:1px solid var(--line);margin:0}
+fieldset legend{font-weight:800;font-size:14px;padding:0 6px}
+label.row{display:flex;font-weight:600}
+label.row input{width:auto;min-height:0}
+h3{font-size:16px;margin:8px 0 4px}
