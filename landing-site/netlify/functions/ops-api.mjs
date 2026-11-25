@@ -36,6 +36,7 @@ export default async (req, context) => {
     origin: facts.isProduction ? PRODUCTION_ORIGIN : new URL(req.url).origin,
     deployContext: facts.isProduction ? 'production' : facts.deployContext,
     netlifyUser: context?.user || null,
+    previewFounderLogin: facts.isProduction ? null : Netlify.env.get('OPS_PREVIEW_FOUNDER_LOGIN') || null,
     mailbox: MAILBOX,
     secrets: secretsFor(facts, k => Netlify.env.get(k)),
     features: featuresFrom(Netlify.env.get('OPS_FEATURES')),

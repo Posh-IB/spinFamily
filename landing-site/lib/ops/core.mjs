@@ -307,7 +307,11 @@ async function authRoutes(parts, method, body, req, deps) {
     case 'POST preview': {
       // Preview deploys only: Netlify team login has already verified who this is.
       if (deps.deployContext === 'production' || !deps.netlifyUser?.email) return notFound();
-      const email = normalizeEmail(deps.netlifyUser.email);
+      let email = normalizeEmail(deps.netlifyUser.email);
+      // The founder's Netlify login can use a different address from their work email. On previews
+      // only, OPS_PREVIEW_FOUNDER_LOGIN (set in Netlify, never in source) maps that login to the founder.
+      const founderLogin = normalizeEmail(deps.previewFounderLogin || '');
+      if (founderLogin && email === founderLogin) email = ORG_FOUNDERS[deps.orgId];
       if (email === ORG_FOUNDERS[deps.orgId]) await ensureFounder(deps);
       const r = await inTx(deps, async t => {
         const m = email && await memberByEmail(t, email, { lock: true });
