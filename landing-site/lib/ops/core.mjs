@@ -209,18 +209,31 @@ export async function handle(req, deps) {
       audit(action, target, extra) { return audit(this, member.id, action, target, extra); },
     };
     const sub = parts.slice(1);
-    let res = null;
-    switch (parts[0]) {
-      case 'team': res = await teamRoutes(sub, method, body, env); break;
-      case 'audit': if (method === 'GET') { env.need('audit.view'); res = json({ audit: rows(await deps.sql`SELECT at, actor, action, target FROM audit_events WHERE org_id = ${deps.orgId} ORDER BY id DESC LIMIT 200`) }); } break;
-      case 'resources': res = await docRoutes(sub, method, body, env); break;
-      case 'approvals': res = await approvalRoutes(sub, method, body, env); break;
-      case 'content': res = await contentRoutes(sub, method, body, env); break;
-      case 'research': res = await researchRoutes(sub, method, body, env); break;
-      default: res = await recordRoutes(parts, method, body, env);
-    }
+    const dispatch = async e => {
+      switch (parts[0]) {
+        case 'team': return teamRoutes(sub, method, body, e);
+        case 'audit': if (method === 'GET') { e.need('audit.view'); return json({ audit: rows(await e.sql`SELECT at, actor, action, target FROM audit_events WHERE org_id = ${e.orgId} ORDER BY id DESC LIMIT 200`) }); } return null;
+        case 'resources': return docRoutes(sub, method, body, e);
+        case 'approvals': return approvalRoutes(sub, method, body, e);
+        case 'content': return contentRoutes(sub, method, body, e);
+        case 'research': return researchRoutes(sub, method, body, e);
+        default: return recordRoutes(parts, method, body, e);
+      }
+    };
+    // Authority boundary (third review, item 4): reads use the authority checked when the request
+    // started. Every write runs in one transaction that first re-checks, under a share lock on the
+    // member and membership, that the person is still active and the session is still current. A
+    // revocation either waits for an in-flight write to commit, or the write sees it and is refused.
+    const res = method === 'GET' ? await dispatch(env) : await inTx(env, async t => {
+      const cur = (await t.sql`SELECT m.auth_generation, ms.status FROM members m JOIN memberships ms ON ms.member_id = m.id AND ms.org_id = ${t.orgId} WHERE m.id = ${member.id} FOR SHARE OF m, ms`)[0];
+      const live = (await t.sql`SELECT auth_generation FROM sessions WHERE sid_hash = ${ctx.hash}`)[0];
+      if (!cur || cur.status !== 'active' || !live || Number(cur.auth_generation) !== Number(live.auth_generation)) { const e = new Error('revoked'); e.revoked = true; throw e; }
+      await barrier(t, 'write.authority.checked');
+      return dispatch(t);
+    });
     return res ? await afterWrite(res) : notFound();
   } catch (e) {
+    if (e.revoked) return fail(401, 'signed_out', 'Your access changed. Please sign in again.');
     if (e.invalid) return fail(400, 'invalid', e.message);
     if (e.stepUp) return fail(403, 'step_up_required', 'This needs your authenticator code. Set it up or enter it under Team & security.');
     if (e.status === 403) return fail(403, 'forbidden', "You don't have access to that.");

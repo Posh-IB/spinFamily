@@ -22,14 +22,23 @@ export async function startDatabase() {
   let server = null, dir = null, url = process.env.OPS_TEST_DATABASE_URL;
   if (!url) {
     const { default: EmbeddedPostgres } = await import('embedded-postgres');
-    // Let embedded-postgres create the directory itself: when tests run as root it hands the
-    // directory to an unprivileged user, which a pre-created 0700 temp dir would block.
-    dir = join(tmpdir(), `sf-ops-pg-${randomBytes(6).toString('hex')}`);
-    const port = 20000 + Math.floor(Math.random() * 20000);
-    server = new EmbeddedPostgres({ databaseDir: dir, user: 'postgres', password: 'test', port, persistent: false, onLog: () => {}, onError: () => {} });
-    await server.initialise();
-    await server.start();
-    url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
+    // Test files run in parallel, each with its own server on a random port; retry on a clash.
+    for (let attempt = 1; ; attempt++) {
+      // Let embedded-postgres create the directory itself: when tests run as root it hands the
+      // directory to an unprivileged user, which a pre-created 0700 temp dir would block.
+      dir = join(tmpdir(), `sf-ops-pg-${randomBytes(6).toString('hex')}`);
+      const port = 20000 + Math.floor(Math.random() * 20000);
+      server = new EmbeddedPostgres({ databaseDir: dir, user: 'postgres', password: 'test', port, persistent: false, onLog: () => {}, onError: () => {} });
+      try {
+        await server.initialise();
+        await server.start();
+        url = `postgres://postgres:test@127.0.0.1:${port}/postgres`;
+        break;
+      } catch (e) {
+        await server.stop().catch(() => {}); rmSync(dir, { recursive: true, force: true });
+        if (attempt >= 3) throw e;
+      }
+    }
   }
   const pool = new pg.Pool({ connectionString: url, max: 12 });
   // An idle connection closed while the server shuts down must not crash the test process.
@@ -138,7 +147,7 @@ export async function researchReady(w, sid, csid) {
   assert.equal((await w.call('POST', 'research/notice/approve', { version: overview.notice.current.version }, { cookie: sid })).status, 200);
   assert.equal((await w.call('POST', `research/surveys/${draft.id}/submit`, {}, { cookie: csid })).status, 200);
   const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'survey' && a.status === 'pending');
-  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid })).status, 200);
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid })).status, 200);
   return { survey: draft, notice: overview.notice.current };
 }
 export async function surveyLink(w, cookie, surveyId, participantId, extra = {}) {

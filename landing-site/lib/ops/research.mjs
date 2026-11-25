@@ -314,11 +314,20 @@ async function readInvite(sql, orgId, hash, lock) {
         FROM survey_invites i JOIN survey_definitions s ON s.id = i.survey_id JOIN participants p ON p.id = i.participant_id WHERE i.token_hash = ${hash} AND i.org_id = ${orgId}`;
   return (await q)[0] || null;
 }
-function inviteLive(inv, now, notice) {
-  return !!inv && inv.used_at === null && inv.revoked_at === null && now <= Number(inv.expires_at) && inv.status === 'approved' && !inv.withdrawn_at && inv.is_test === false
+function inviteLive(inv, now, notice, researchOn) {
+  return researchOn && !!inv && inv.used_at === null && inv.revoked_at === null && now <= Number(inv.expires_at) && inv.status === 'approved' && !inv.withdrawn_at && inv.is_test === false
     && notice.approvedCurrent && inv.notice_version === notice.current.version;
 }
-const activeConsent = async (sql, orgId, pid) => (await sql`SELECT id FROM research_consents WHERE org_id = ${orgId} AND participant_id = ${pid} AND purpose = 'pilot_research' AND withdrawn_at IS NULL`)[0]?.id || null;
+// Consent counts only for the notice version currently approved; a changed notice needs consent again.
+const activeConsent = async (sql, orgId, pid, noticeVersion) => (await sql`SELECT id FROM research_consents WHERE org_id = ${orgId} AND participant_id = ${pid} AND purpose = 'pilot_research' AND withdrawn_at IS NULL AND notice_version = ${noticeVersion}`)[0]?.id || null;
+// Eligibility re-checked at load and inside the submit transaction.
+async function stillEligible(sql, orgId, inv) {
+  const p = (await sql`SELECT communication FROM participants WHERE id = ${inv.participant_id}`)[0];
+  if (!p || p.communication === 'opted_out') return false;
+  if ((await sql`SELECT 1 FROM research_withdrawals WHERE org_id = ${orgId} AND participant_id = ${inv.participant_id}`)[0]) return false;
+  if (inv.cohort_id && (await sql`SELECT status FROM research_enrollments WHERE cohort_id = ${inv.cohort_id} AND participant_id = ${inv.participant_id}`)[0]?.status === 'withdrawn') return false;
+  return true;
+}
 
 export async function publicSurveyRoutes(parts, method, body, deps) {
   if (parts[0] !== 'survey' || method !== 'POST') return null;
@@ -327,24 +336,30 @@ export async function publicSurveyRoutes(parts, method, body, deps) {
   const gone = () => fail(400, 'link_invalid', 'This survey link has expired or was already used. Thank you — if you think this is a mistake, reply to the email you got from SpinFamily.');
   if (!token) return gone();
   const hash = sha256(token);
-  const notice = await noticeState(deps);
+  // Kill switch (third review): with research switched off, links can't be opened or answered.
+  // Withdrawal stays available.
+  const researchOn = !!deps.features?.has('research');
 
   if (parts[1] === 'load') {
+    const notice = await noticeState(deps);
     const inv = await readInvite(deps.sql, deps.orgId, hash, false);
-    if (!inviteLive(inv, deps.now(), notice)) return gone();
-    return Response.json({ title: inv.title, intro: inv.intro, questions: inv.questions, notice: notice.current, consentOnFile: !!(await activeConsent(deps.sql, deps.orgId, inv.participant_id)) }, noStore);
+    if (!inviteLive(inv, deps.now(), notice, researchOn) || !(await stillEligible(deps.sql, deps.orgId, inv))) return gone();
+    return Response.json({ title: inv.title, intro: inv.intro, questions: inv.questions, notice: notice.current, consentOnFile: !!(await activeConsent(deps.sql, deps.orgId, inv.participant_id, notice.current.version)) }, noStore);
   }
   if (parts[1] === 'submit') {
     const r = await inTx(deps, async t => {
       const inv = await readInvite(t.sql, t.orgId, hash, true);
       await barrier(t, 'survey.submit.locked');
-      if (!inviteLive(inv, t.now(), notice)) return { gone: true };
+      // Notice approval is read inside the transaction, so a notice change can't slip in between.
+      const notice = await noticeState(t);
+      if (!inviteLive(inv, t.now(), notice, researchOn) || !(await stillEligible(t.sql, t.orgId, inv))) return { gone: true };
       const answers = validateAnswers(inv.questions, body.answers);
       if ((await t.sql`SELECT 1 FROM survey_responses WHERE org_id = ${t.orgId} AND participant_id = ${inv.participant_id} AND survey_id = ${inv.survey_id}`)[0]) return { gone: true };
-      let consentId = await activeConsent(t.sql, t.orgId, inv.participant_id);
+      let consentId = await activeConsent(t.sql, t.orgId, inv.participant_id, notice.current.version);
       if (!consentId) {
         if (body.consent !== true || body.noticeVersion !== notice.current.version) return { consentRequired: true };
         consentId = newId('rcn');
+        await t.sql`UPDATE research_consents SET withdrawn_at = ${iso(t.now())}, withdrawal_method = 'superseded_by_new_notice', withdrawal_by = 'participant' WHERE org_id = ${t.orgId} AND participant_id = ${inv.participant_id} AND withdrawn_at IS NULL`;
         await t.sql`INSERT INTO research_consents (id, org_id, participant_id, purpose, notice_version, method, evidence, given_at, recorded_by) VALUES (${consentId}, ${t.orgId}, ${inv.participant_id}, 'pilot_research', ${notice.current.version}, 'participant_survey_page', 'Ticked the consent box on the survey page', ${iso(t.now())}, 'participant')`;
       }
       const at = iso(t.now());

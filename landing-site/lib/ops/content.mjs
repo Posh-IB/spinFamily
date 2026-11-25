@@ -11,7 +11,7 @@ const EDITABLE = ['idea', 'draft', 'changes_requested'];
 const CHANNEL_LABEL = { instagram: 'Instagram', facebook: 'Facebook page', fbgroups: 'Facebook group', tiktok: 'TikTok', other: 'Social' };
 export const refLinkFor = channel => channel === 'other' ? 'https://spinfamilyapp.com/' : `https://spinfamilyapp.com/?ref=${channel}`;
 
-const toPost = r => { const p = row(r); return { id: p.id, version: p.version, channel: p.channel, plannedDate: p.planned_date, caption: p.caption, refLink: p.ref_link, assetDocumentId: p.asset_document_id, assetTitle: p.asset_title || null, status: p.status, publishedUrl: p.published_url, notes: p.notes, createdBy: p.created_by, createdByName: p.created_by_name, createdAt: p.created_at, updatedAt: p.updated_at }; };
+const toPost = r => { const p = row(r); return { id: p.id, version: p.version, channel: p.channel, plannedDate: p.planned_date, caption: p.caption, refLink: p.ref_link, assetDocumentId: p.asset_document_id, assetTitle: p.asset_title || null, status: p.status, publishedUrl: p.published_url, publishedEvidence: p.status === 'published' ? (p.published_url ? 'link_given_not_checked' : 'reported_only') : null, notes: p.notes, createdBy: p.created_by, createdByName: p.created_by_name, createdAt: p.created_at, updatedAt: p.updated_at }; };
 async function getPost(env, id) {
   const r = (await env.sql`SELECT c.id, c.version, c.channel, c.planned_date::text AS planned_date, c.caption, c.ref_link, c.asset_document_id, d.title AS asset_title, c.status, c.published_url, c.notes, c.created_by, m.name AS created_by_name, c.created_at, c.updated_at
     FROM content_posts c LEFT JOIN documents d ON d.id = c.asset_document_id LEFT JOIN members m ON m.id = c.created_by WHERE c.id = ${id} AND c.org_id = ${env.orgId}`)[0];

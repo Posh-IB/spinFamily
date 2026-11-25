@@ -198,7 +198,7 @@ test('cross-site and malformed mutations are blocked', async () => {
 test('coordinator cannot reach founder-only functions; client role claims are ignored', async () => {
   const w = world();
   const { sid, csid, coordId } = await team(w);
-  for (const [m, p, b] of [['GET', 'team'], ['GET', 'audit'], ['POST', 'team/invite', { email: 'x@example.com', name: 'X', role: 'coordinator' }], ['PATCH', `team/${coordId}`, { action: 'restore' }], ['POST', 'resources', { title: 'x', url: 'https://example.com' }], ['POST', 'participants/import', { source: 'founder_records', exportRef: 'x', exportedAt: '2026-11-24', expectedCount: 1, records: [{ firstName: 'A', email: 'a@example.com', consent: { value: 'yes', version: 'v' } }] }], ['POST', 'participants/backfill', { receiptIds: [] }], ['POST', 'research/cohorts', { name: 'X' }]])
+  for (const [m, p, b] of [['GET', 'team'], ['GET', 'audit'], ['POST', 'team/invite', { email: 'x@example.com', name: 'X', role: 'coordinator' }], ['PATCH', `team/${coordId}`, { action: 'restore' }], ['POST', 'resources', { title: 'x', url: 'https://example.com' }], ['POST', 'participants/import', { source: 'founder_records', exportRef: 'x', exportedAt: '2026-11-24', expectedCount: 1, consentEvidence: 'x', records: [{ firstName: 'A', email: 'a@example.com', consent: { value: 'yes', version: 'v' } }] }], ['POST', 'participants/backfill', { receiptIds: [] }], ['POST', 'research/cohorts', { name: 'X' }]])
     assert.equal((await w.call(m, p, b, { cookie: csid })).status, 403, `${m} ${p}`);
   assert.equal((await w.call('GET', 'team', undefined, { cookie: csid, headers: { 'x-role': 'founder' } })).status, 403);
   assert.equal((await w.call('POST', 'team/invite', { email: 'b@example.com', name: 'B', role: 'founder' }, { cookie: sid })).status, 400);
@@ -282,7 +282,7 @@ test('IR-03/IR-09: counts are marked incomplete until the backfill is done; unre
   assert.equal((await w.call('POST', 'participants/backfill', { receiptIds: [beta.body.receiptId, forms.body.receiptId] }, { cookie: sid })).status, 200);
   d = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body;
   reg = d.metrics.find(x => x.id === 'registrations');
-  assert.equal(reg.value, 1); assert.equal(reg.status, 'actual'); assert.equal(reg.households, 1);
+  assert.equal(reg.value, 1); assert.equal(reg.status, 'actual'); assert.deepEqual(reg.households, { known: 0, notRecorded: 1 });
   assert.equal(d.metrics.find(x => x.id === 'beta').value, 1);
 });
 
@@ -330,7 +330,7 @@ test('IR-09/R2-03: founder import needs source ids and consent, writes ledger ro
   const w = world();
   const { sid } = await w.ready(FOUNDER_EMAIL);
   const consent = { value: 'yes', version: 'pilot-form:2026-11' };
-  const base = { source: 'netlify_forms_export', exportRef: 'pilot-form-2026-11-24.csv', exportedAt: '2026-11-24', expectedCount: 2 };
+  const base = { source: 'netlify_forms_export', exportRef: 'pilot-form-2026-11-24.csv', exportedAt: '2026-11-24', expectedCount: 2, consentEvidence: 'Archived form page, Drive' };
   assert.equal((await w.call('POST', 'participants/import', { ...base, records: [{ firstName: 'Kilo', email: 'kilo@example.com', consent }] }, { cookie: sid })).status, 400, 'source id required');
   assert.equal((await w.call('POST', 'participants/import', { ...base, records: [{ firstName: 'Kilo', email: 'kilo@example.com', sourceSubmissionId: 's1' }] }, { cookie: sid })).status, 400, 'consent required');
   const r = await w.call('POST', 'participants/import', { ...base, records: [
@@ -411,9 +411,9 @@ test('approvals: coordinator uploads and messages go to the founder; only the fo
   const inbox = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals;
   assert.equal(inbox.filter(a => a.status === 'pending').length, 2);
   const docApproval = inbox.find(a => a.itemType === 'document');
-  assert.equal((await w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved' }, { cookie: csid })).status, 403);
-  assert.equal((await w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'changes_requested' }, { cookie: sid })).status, 400, 'note required');
-  const [a1, a2] = await Promise.all([w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved', audience: 'team' }, { cookie: sid }), w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved' }, { cookie: sid })]);
+  assert.equal((await w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved', digest: docApproval.digest }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'changes_requested', digest: docApproval.digest }, { cookie: sid })).status, 400, 'note required');
+  const [a1, a2] = await Promise.all([w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved', audience: 'team', digest: docApproval.digest }, { cookie: sid }), w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved', digest: docApproval.digest }, { cookie: sid })]);
   assert.deepEqual([a1.status, a2.status].sort(), [200, 400]);
   const after = (await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources.find(r => r.id === doc.id);
   assert.equal(after.approval, 'approved'); assert.equal(after.audience, 'team');
@@ -433,14 +433,14 @@ test('content: draft → approval → posted; nothing unapproved can be marked p
   assert.equal(p.status, 'in_review');
   assert.equal((await w.call('PATCH', `content/${p.id}`, { caption: 'sneaky edit' }, { cookie: csid })).status, 400, 'locked while in review');
   const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'content_post');
-  await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid });
   p = (await w.call('GET', 'content', undefined, { cookie: csid })).body.posts[0];
   assert.equal(p.status, 'approved');
   assert.equal((await w.call('PATCH', `content/${p.id}`, { caption: 'changed' }, { cookie: csid })).status, 400);
   assert.equal((await w.call('PATCH', `content/${p.id}`, { caption: 'changed', confirmReapproval: true }, { cookie: csid })).body.post.status, 'draft');
   await w.call('POST', `content/${p.id}/submit`, {}, { cookie: csid });
   const ap2 = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'content_post' && a.status === 'pending');
-  await w.call('POST', `approvals/${ap2.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  await w.call('POST', `approvals/${ap2.id}/decide`, { decision: 'approved', digest: ap2.digest }, { cookie: sid });
   assert.equal((await w.call('POST', `content/${p.id}/published`, { publishedUrl: 'https://instagram.com/p/x' }, { cookie: csid })).body.post.status, 'published');
 });
 
@@ -449,7 +449,7 @@ async function approvedSurvey(w, sid, csid) {
   const draft = (await w.call('GET', 'research', undefined, { cookie: csid })).body.surveys[0];
   await w.call('POST', `research/surveys/${draft.id}/submit`, {}, { cookie: csid });
   const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'survey' && a.status === 'pending');
-  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid })).status, 200);
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid })).status, 200);
   return draft;
 }
 test('research: questionnaire and notice must be approved before any link; consent on the page; one-time links; results scoped by role', async () => {
