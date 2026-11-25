@@ -77,7 +77,9 @@ function loginScreen(message) {
     h('label', {}, 'Work email', h('input', { type: 'email', name: 'email', autocomplete: 'email', required: true, maxlength: 120 })),
     h('button', { class: 'btn', type: 'submit' }, 'Email me a sign-in link'));
   const preview = h('div');
-  api('GET', 'auth/me').catch(e => { if (location.hostname.endsWith('.netlify.app')) preview.append(h('p', { class: 'muted' }, 'Preview deploy:'), h('button', { class: 'btn ghost', onclick: async () => { try { const r = await api('POST', 'auth/preview'); r.mfa === 'pending' ? mfaScreen() : boot(); } catch (err) { preview.append(errorBox(err)); } } }, 'Sign in with my Netlify team login')); });
+  // Previews never send email, so on a preview the email form is replaced by Netlify team sign-in.
+  if (location.hostname.endsWith('.netlify.app')) form.replaceChildren(h('div', { class: 'notice warn' }, 'This is a preview. Previews never send sign-in emails. Use the button below; it uses your Netlify team login.'));
+  api('GET', 'auth/me').catch(e => { if (location.hostname.endsWith('.netlify.app')) preview.append(h('button', { class: 'btn ghost', onclick: async () => { try { const r = await api('POST', 'auth/preview'); r.mfa === 'pending' ? mfaScreen() : boot(); } catch (err) { preview.append(errorBox(err)); } } }, 'Sign in with my Netlify team login')); });
   clear(app).append(h('div', { class: 'center' }, h('div', { class: 'login' },
     h('p', {}, h('span', { class: 'logo' }, 'Spin', h('em', {}, 'Family'), h('small', {}, 'Operations'))),
     h('div', { class: 'card' }, h('h1', {}, 'Team sign-in'), h('p', { class: 'sub' }, 'For the SpinFamily team only. Access is by invitation.'), message ? h('div', { class: 'notice warn' }, message) : null, form, preview))));
