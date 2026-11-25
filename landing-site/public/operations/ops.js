@@ -46,6 +46,12 @@ const LABEL = {
   identified: 'Identified', contacted: 'Contacted', meeting_scheduled: 'Meeting scheduled', in_conversation: 'In conversation', paused: 'Paused', closed: 'Closed',
   approved: 'Approved', pending_review: 'Pending review', draft: 'Draft', retired: 'Retired',
   open: 'Open', done: 'Done', cancelled: 'Cancelled',
+  netlify_forms_export: 'Netlify form export', app_identity_export: 'App account export', founder_records: 'Your own records',
+  pending: 'Waiting', changes_requested: 'Changes requested', withdrawn: 'Withdrawn', incomplete: 'Incomplete', field_report: 'Field report',
+  idea: 'Idea', in_review: 'In review', scheduled: 'Scheduled', published: 'Posted',
+  planned: 'Planned', active: 'Active', completed: 'Completed', invited: 'Invited', consented: 'Consented',
+  document: 'Doc', content_post: 'Social post', message: 'Message', offer: 'Offer', survey: 'Questionnaire',
+  initial: 'First session', follow_up: 'Follow-up session', interview: 'Interview',
   'campus-groups': 'Campus groups/offices', fbgroups: 'Facebook groups', direct: 'Direct', lindsey: 'Lindsey (personal)', campus: 'Campus flyer/QR', other: 'Other',
   instagram: 'Instagram', facebook: 'Facebook page', tiktok: 'TikTok',
 };
@@ -80,7 +86,10 @@ function mfaScreen(message) {
   const form = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(form, async () => { await api('POST', 'auth/mfa', formData(form)); boot(); }); } },
     h('label', {}, 'Authenticator code', h('span', { class: 'hint' }, 'The 6-digit code from your authenticator app'), h('input', { name: 'code', inputmode: 'numeric', autocomplete: 'one-time-code', pattern: '[0-9]{6}', maxlength: 6, required: true })),
     h('button', { class: 'btn', type: 'submit' }, 'Continue'));
-  clear(app).append(h('div', { class: 'center' }, h('div', { class: 'login' }, h('div', { class: 'card' }, h('h1', {}, 'One more step'), message ? h('div', { class: 'notice warn' }, message) : null, form))));
+  const recover = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(recover, async () => { await api('POST', 'auth/authenticator/recover', formData(recover)); toast('Authenticator reset. Set up the new one now.'); boot('#/team'); }); } },
+    h('p', { class: 'muted' }, 'Founder only. Enter the setup code saved in Netlify (OPS_FOUNDER_ENROLLMENT_CODE) to reset your authenticator. Teammates: ask Dion to reset yours.'),
+    h('label', {}, 'Netlify setup code', h('input', { name: 'enrollmentCode', type: 'password', autocomplete: 'off', required: true })), h('button', { class: 'btn ghost', type: 'submit' }, 'Reset my authenticator'));
+  clear(app).append(h('div', { class: 'center' }, h('div', { class: 'login' }, h('div', { class: 'card' }, h('h1', {}, 'One more step'), message ? h('div', { class: 'notice warn' }, message) : null, form, h('details', {}, h('summary', {}, 'Lost your phone?'), recover)))));
   form.querySelector('input').focus();
 }
 
@@ -99,7 +108,8 @@ async function consumeSignInLink() {
 
 // ---------- layout ----------
 const NAV = [
-  ['dashboard', 'Today', 'dashboard.view'], ['participants', 'Participants', 'participants.view.assigned'], ['followups', 'Follow-ups', 'followups.manage'],
+  ['dashboard', 'Today', 'dashboard.view'], ['approvals', 'Approvals', 'approvals.submit'], ['participants', 'Participants', 'participants.view.assigned'], ['followups', 'Follow-ups', 'followups.manage'],
+  ['content', 'Social calendar', 'content.edit'], ['research', 'Research & testing', 'research.view'],
   ['outreach', 'Outreach log', 'outreach.record'], ['relationships', 'Relationships', 'relationships.record'], ['docs', 'Company docs', 'resources.view'], ['team', 'Team & security', null],
 ];
 function layout(active, ...content) {
@@ -110,7 +120,7 @@ function layout(active, ...content) {
       h('div', { class: 'who' }, h('b', {}, ME.member.name), ' · ', ME.member.roleLabel, h('br'), h('span', { class: 'email' }, ME.member.email + ' · '), h('a', { href: '#', onclick: async e => { e.preventDefault(); await api('POST', 'auth/logout').catch(() => {}); ME = null; loginScreen('You are signed out.'); } }, 'Sign out'))),
     h('div', { class: 'shell' }, nav, h('main', { id: 'main', tabindex: '-1' },
       ME.previewDeploy ? h('div', { class: 'notice warn' }, 'Preview deploy: test data only. Nothing here is the real participant list.') : null,
-      ME.needsAuthenticator ? h('div', { class: 'notice warn' }, 'Set up your authenticator app under ', h('a', { href: '#/team' }, 'Team & security'), ' to unlock team management, contact details and approvals.') : null,
+      ME.needsAuthenticator ? h('div', { class: 'notice warn' }, 'Set up your authenticator app below before you can see participant details or anything else in the workspace.') : null,
       ...content)));
 }
 
@@ -153,33 +163,62 @@ async function viewParticipants() {
       h('tbody', {}, d.participants.length ? d.participants.map(p => h('tr', {},
         h('td', {}, h('a', { href: '#/participants/' + p.id }, p.firstName), p.isTest === true ? h('span', { class: 'tag' }, ' test') : p.isTest === null ? h('span', { class: 'tag pending' }, ' not reviewed') : null),
         h('td', {}, p.email || '—'), h('td', {}, L(p.cohort)), h('td', {}, L(p.enrollment)), h('td', {}, L(p.account)), h('td', {}, L(p.engagement)), h('td', {}, fmtDate(p.createdAt)))) : h('tr', {}, h('td', { colspan: 7, class: 'muted' }, 'No participants yet.'))))),
-    h('h2', {}, 'Add a participant'), h('p', { class: 'muted' }, 'Adults only. Never record children\'s names, birthdays, schools, photos or health details.'), form);
+    h('h2', {}, 'Add a participant'), h('p', { class: 'muted' }, 'Adults only. Never record children\'s names, birthdays, schools, photos or health details.'), form,
+    can('participants.verify') ? importPanel() : null);
+}
+function importPanel() {
+  const f = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(f, async () => {
+    const b = formData(f);
+    const records = b.rows.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [firstName, email, source, submittedAt] = l.split(',').map(x => (x || '').trim()); return { firstName, email, source: source || undefined, submittedAt: submittedAt || undefined }; });
+    const r = await api('POST', 'participants/import', { source: b.source, exportedAt: b.exportedAt, records, markBackfillComplete: !!f.querySelector('input[name=done]:checked') });
+    toast(`Imported ${r.created}. ${r.alreadyExisted} already existed.`); viewParticipants();
+  }); } },
+    h('label', {}, 'Where this list came from', select('source', ['netlify_forms_export', 'app_identity_export', 'founder_records'], 'netlify_forms_export')),
+    h('label', {}, 'Date you exported it', h('input', { name: 'exportedAt', type: 'date', required: true })),
+    h('label', {}, 'One person per line: first name, email, link source (optional), submitted date (optional)', h('textarea', { name: 'rows', required: true, placeholder: 'Jordan, jordan@example.com, direct, 2026-11-12' })),
+    h('label', { class: 'row' }, h('input', { type: 'checkbox', name: 'done' }), 'This finishes the backfill (the dashboard stops saying counts are incomplete)'),
+    h('button', { class: 'btn', type: 'submit' }, 'Import'));
+  return h('details', {}, h('summary', {}, 'Import earlier sign-ups or beta testers'), h('p', { class: 'muted' }, 'Imported people are marked "not reviewed" until you confirm they are real participants. Existing emails are skipped.'), f);
 }
 
 async function viewParticipant(id) {
   const [d, team] = await Promise.all([api('GET', 'participants/' + id), can('team.manage') ? api('GET', 'team').catch(() => null) : null]);
   const p = d.participant;
-  const states = { cohort: ['pilot', 'beta', 'research', 'prospect'], enrollment: ['prospect', 'registration_received', 'eligibility_confirmed', 'enrolled', 'withdrawn', 'archived'], account: ['unknown', 'not_found', 'created', 'confirmation_pending', 'confirmed', 'disabled'], engagement: ['unknown', 'not_started', 'first_plan_generated', 'first_plan_accepted', 'first_activity_completed', 'repeat_use_observed', 'survey_submitted', 'pilot_completed'], communication: ['unknown', 'not_sent', 'queued', 'smtp_accepted', 'delivery_confirmed', 'bounced', 'failed', 'uncertain', 'opted_out'] };
+  const founder = can('participants.verify');
+  const states = { enrollment: ['prospect', 'registration_received', 'eligibility_confirmed', 'enrolled', 'withdrawn', 'archived'], account: ['unknown', 'not_found', 'created', 'confirmation_pending', 'confirmed', 'disabled'], engagement: ['unknown', 'not_started', 'first_plan_generated', 'first_plan_accepted', 'first_activity_completed', 'repeat_use_observed', 'survey_submitted', 'pilot_completed'], communication: ['unknown', 'not_sent', 'queued', 'smtp_accepted', 'delivery_confirmed', 'bounced', 'failed', 'uncertain', 'opted_out'] };
+  const label = { enrollment: 'Enrollment', account: 'App account', engagement: 'Engagement', communication: 'Pilot emails' };
+  const badge = f => f in p.verified ? h('span', { class: 'tag ' + (p.verified[f] ? 'approved' : 'pending') }, p.verified[f] ? 'verified' : 'reported') : null;
   const form = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(form, async () => {
     const body = formData(form);
+    body.version = p.version;
     if ('isTest' in body) body.isTest = body.isTest === 'yes';
     if (body.assignedTo === '') body.assignedTo = null;
-    await api('PATCH', 'participants/' + id, body); toast('Saved'); viewParticipant(id);
+    if (founder) { body.verify = {}; for (const f of ['account', 'engagement', 'communication']) if (form.querySelector(`input[name=verify_${f}]`)?.checked) body.verify[f] = true; for (const f of ['account', 'engagement', 'communication']) delete body['verify_' + f]; }
+    try { await api('PATCH', 'participants/' + id, body); toast('Saved'); viewParticipant(id); }
+    catch (err) { if (err.status === 409) { toast('Someone else changed this. Showing the latest.'); viewParticipant(id); return; } throw err; }
   }); } },
-    ...Object.entries(states).map(([f, list]) => h('label', {}, ({ cohort: 'Cohort', enrollment: 'Enrollment', account: 'App account', engagement: 'Engagement', communication: 'Pilot emails' })[f], select(f, list, p[f]))),
+    founder ? h('label', {}, 'Cohort', select('cohort', ['pilot', 'beta', 'research', 'prospect'], p.cohort)) : h('p', {}, h('b', {}, 'Cohort: '), L(p.cohort)),
+    ...Object.entries(states).map(([f, list]) => h('label', {}, h('span', { class: 'row' }, label[f], badge(f)), select(f, list, p[f]),
+      founder && f !== 'enrollment' ? h('label', { class: 'row' }, h('input', { type: 'checkbox', name: 'verify_' + f, checked: p.verified[f] }), 'I checked this against a source') : null)),
+    founder ? h('label', {}, 'How you checked (needed when you tick a box above)', h('input', { name: 'evidenceNote', maxlength: 300, placeholder: 'e.g. Checked Netlify Identity on Nov 26' })) : h('p', { class: 'muted' }, 'Your updates are saved as reported. Dion marks them verified once he checks them against the app or mailbox.'),
     h('label', {}, 'How they heard (team report)', select('reportedSource', ['instagram', 'facebook', 'fbgroups', 'tiktok', 'lindsey', 'campus', 'campus-groups', 'direct', 'other', 'unknown'], p.reportedSource)),
     team ? h('label', {}, 'Assigned to', h('select', { name: 'assignedTo' }, h('option', { value: '' }, 'Nobody'), team.members.filter(m => m.status !== 'revoked').map(m => h('option', { value: m.id, selected: m.id === p.assignedTo }, m.name)))) : null,
     can('participants.markTest') ? h('label', {}, 'Internal test entry?', h('select', { name: 'isTest' }, h('option', { value: 'no', selected: p.isTest === false }, 'No, a real participant'), h('option', { value: 'yes', selected: p.isTest === true }, 'Yes, exclude from counts'))) : null,
-    h('label', {}, 'Notes', h('textarea', { name: 'notes', maxlength: 1000 }, p.notes || '')),
+    h('label', {}, 'Notes', h('span', { class: 'hint' }, 'Adults only. No children\'s names, schools, health or other sensitive details.'), h('textarea', { name: 'notes', maxlength: 1000 }, p.notes || '')),
     h('button', { class: 'btn', type: 'submit' }, 'Save changes'));
   layout('participants',
     h('p', {}, h('a', { href: '#/participants' }, '← Participants')),
     h('h1', {}, p.firstName), h('p', { class: 'sub' }, p.email || 'No email on file', p.emailMasked ? ' (hidden: not assigned to you)' : ''),
-    h('div', { class: 'card' }, h('p', {}, h('b', {}, 'Link source from the sign-up form: '), p.technicalSource ? L(p.technicalSource) : 'Not from the form'), h('p', { class: 'muted' }, 'The form\'s link source is kept as recorded. Use "How they heard" for what the person or the team reports.'), p.intake ? h('p', {}, h('b', {}, 'Form received: '), fmtDate(p.intake.receivedAt)) : null),
-    p.isTest === null && can('participants.markTest') ? h('div', { class: 'notice warn' }, 'This form registration hasn\'t been reviewed yet. Mark whether it is an internal test.') : null,
+    h('div', { class: 'card' },
+      h('p', {}, h('b', {}, 'Link source from the sign-up form: '), p.technicalSource ? L(p.technicalSource) : 'Not from the form'),
+      p.heardFrom ? h('p', {}, h('b', {}, 'They said they heard about it from: '), p.heardFrom) : null,
+      h('p', { class: 'muted' }, 'Form sources are kept as recorded. Use "How they heard" for what the team reports.'),
+      p.intake?.receivedAt ? h('p', {}, h('b', {}, 'Form received: '), fmtDate(p.intake.receivedAt)) : null,
+      p.intake?.importedFrom ? h('p', {}, h('b', {}, 'Imported from: '), `${p.intake.importedFrom.replace(/_/g, ' ')} (exported ${fmtDate(p.intake.exportedAt)})`) : null),
+    p.isTest === null && can('participants.markTest') ? h('div', { class: 'notice warn' }, 'This registration hasn\'t been reviewed yet. Mark whether it is an internal test.') : null,
     h('h2', {}, 'Status'), form,
     h('h2', {}, 'History'), h('p', { class: 'muted' }, 'Every change is recorded and can\'t be edited.'),
-    d.history.length ? h('ul', {}, d.history.map(x => h('li', {}, `${fmtDate(x.at)}: `, x.changes.map(c => `${c.field} ${c.from !== undefined ? L(c.from) + ' → ' : ''}${L(c.to)}`).join('; ')))) : h('p', { class: 'muted' }, 'No changes yet.'));
+    d.history.length ? h('ul', {}, d.history.map(x => h('li', {}, `${fmtDate(x.at)}: `, x.changes.map(c => `${c.field} ${c.from !== undefined && c.from !== null ? L(c.from) + ' → ' : ''}${L(c.to)}`).join('; ')))) : h('p', { class: 'muted' }, 'No changes yet.'));
 }
 
 async function viewFollowups() {
@@ -235,16 +274,26 @@ async function viewRelationships() {
 async function viewRelationship(id) {
   const d = await api('GET', 'relationships');
   const r = d.relationships.find(x => x.id === id); if (!r) throw new Error('Not found.');
-  const edit = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(edit, async () => { await api('PATCH', 'relationships/' + id, formData(edit)); toast('Saved'); viewRelationship(id); }); } },
+  const founder = ME.member.role === 'founder';
+  const canEdit = founder || r.createdBy === ME.member.id || r.owner === ME.member.id;
+  const edit = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(edit, async () => {
+    try { await api('PATCH', 'relationships/' + id, { ...formData(edit), version: r.version }); toast('Saved'); viewRelationship(id); }
+    catch (err) { if (err.status === 409) { toast('Someone else changed this. Showing the latest.'); viewRelationship(id); return; } throw err; }
+  }); } },
     h('div', { class: 'row' }, h('label', {}, 'Stage', select('stage', d.stages, r.stage)), h('label', {}, 'Next action date', h('input', { name: 'nextActionDate', type: 'date', value: r.nextActionDate || '' }))),
     h('label', {}, 'Next action', h('input', { name: 'nextAction', maxlength: 200, value: r.nextAction || '' })),
     h('label', {}, 'Notes', h('textarea', { name: 'notes', maxlength: 1000 }, r.notes || '')),
     h('button', { class: 'btn', type: 'submit' }, 'Save'));
   const log = h('form', { class: 'inline', onsubmit: e => { e.preventDefault(); submitting(log, async () => { await api('POST', `relationships/${id}/log`, formData(log)); toast('Logged'); viewRelationship(id); }); } },
     h('label', {}, 'Type', select('kind', ['meeting', 'demo', 'call', 'email', 'note'], 'meeting')), h('label', {}, 'What happened', h('input', { name: 'summary', required: true, maxlength: 500 })), h('button', { class: 'btn', type: 'submit' }, 'Add'));
+  const offer = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(offer, async () => { await api('POST', 'approvals', { itemType: 'offer', relationshipId: id, offer: formData(offer).offer }); toast('Sent to Dion for approval'); viewRelationship(id); }); } },
+    h('label', {}, 'What would you like to offer or promise?', h('textarea', { name: 'offer', required: true, maxlength: 1000, placeholder: 'e.g. A demo table at the Parenting Resource Center in December' })), h('button', { class: 'btn', type: 'submit' }, 'Ask Dion to approve'));
   layout('relationships', h('p', {}, h('a', { href: '#/relationships' }, '← Relationships')), h('h1', {}, r.contactName), h('p', { class: 'sub' }, `${r.organization}${r.office ? ' · ' + r.office : ''}`),
-    h('div', { class: 'notice' }, r.offerApproved ? 'Dion has approved making offers to this contact.' : 'No offers approved yet. Share approved materials only, and check with Dion before promising anything.'),
-    edit, h('h2', {}, 'Contact log'), log, (r.log || []).length ? h('ul', {}, [...r.log].reverse().map(x => h('li', {}, `${fmtDate(x.at)} · ${x.kind}: ${x.summary}`))) : h('p', { class: 'muted' }, 'Nothing logged yet.'));
+    h('div', { class: 'notice' }, r.offerApproved ? 'Dion has approved making offers to this contact.' : 'No offers approved yet. Share approved materials only, and check with Dion before promising anything.',
+      founder ? h('div', { class: 'row' }, h('button', { class: 'btn small ghost', onclick: async () => { await api('PATCH', 'relationships/' + id, { offerApproved: !r.offerApproved }); viewRelationship(id); } }, r.offerApproved ? 'Withdraw offer approval' : 'Approve offers')) : null),
+    canEdit ? edit : h('p', { class: 'muted' }, 'Dion or the person who added this contact can edit it. You can still log your contact below.'),
+    !founder ? h('details', {}, h('summary', {}, 'Ask to make an offer'), offer) : null,
+    h('h2', {}, 'Contact log'), log, (r.log || []).length ? h('ul', {}, [...r.log].reverse().map(x => h('li', {}, `${fmtDate(x.at)} · ${x.kind}: ${x.summary}`))) : h('p', { class: 'muted' }, 'Nothing logged yet.'));
 }
 
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
@@ -319,22 +368,23 @@ async function viewResources() {
 
 async function viewTeam() {
   const parts = [h('h1', {}, 'Team & security')];
-  // Authenticator
   const sec = h('div', { class: 'card' });
-  if (ME.member.role === 'founder') {
-    if (ME.needsAuthenticator || ME.member.mfaEnabled === false) {
-      sec.append(h('h2', {}, 'Set up your authenticator app'), h('p', {}, 'Founder access needs a second step: a 6-digit code from an app like Google Authenticator, Microsoft Authenticator or 1Password.'),
-        h('button', { class: 'btn', onclick: async () => {
-          const s = await api('POST', 'auth/authenticator/setup');
-          const f = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(f, async () => { await api('POST', 'auth/authenticator/confirm', formData(f)); toast('Authenticator turned on'); boot('#/team'); }); } },
-            h('p', {}, '1. In your authenticator app, add an account and choose "Enter a setup key". Use this key (time-based):'), h('p', { class: 'mono' }, s.secret.replace(/(.{4})/g, '$1 ').trim()),
-            h('p', {}, h('a', { href: s.uri }, 'Or tap here on your phone to add it directly')),
-            h('label', {}, '2. Enter the 6-digit code it shows', h('input', { name: 'code', inputmode: 'numeric', pattern: '[0-9]{6}', maxlength: 6, required: true, autocomplete: 'one-time-code' })),
-            h('button', { class: 'btn', type: 'submit' }, 'Turn on'));
-          clear(sec).append(h('h2', {}, 'Set up your authenticator app'), f);
-        } }, 'Start setup'));
-    } else sec.append(h('h2', {}, 'Authenticator'), h('p', {}, 'On. You\'ll be asked for a code each time you sign in.'));
-  } else sec.append(h('h2', {}, 'Your access'), h('p', {}, `${ME.member.roleLabel}. Sign-in links go to ${ME.member.email}.`), h('p', { class: 'muted' }, 'To change your access, ask Dion.'));
+  if (ME.needsAuthenticator) {
+    const founder = ME.founderEnrollmentCodeRequired;
+    sec.append(h('h2', {}, 'Set up your authenticator app'), h('p', {}, 'Everyone on the team uses a second step: a 6-digit code from an app like Google Authenticator, Microsoft Authenticator or 1Password. It protects parents\' details if someone gets into your email.'));
+    const startForm = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(startForm, async () => {
+      const s = await api('POST', 'auth/authenticator/setup', founder ? formData(startForm) : {});
+      const f = h('form', { class: 'stack', onsubmit: ev => { ev.preventDefault(); submitting(f, async () => { await api('POST', 'auth/authenticator/confirm', formData(f)); toast('Authenticator turned on'); boot('#/dashboard'); }); } },
+        h('p', {}, '1. In your authenticator app, add an account and choose "Enter a setup key". Use this key (time-based):'), h('p', { class: 'mono' }, s.secret.replace(/(.{4})/g, '$1 ').trim()),
+        h('p', {}, h('a', { href: s.uri }, 'Or tap here on your phone to add it directly')),
+        h('label', {}, '2. Enter the 6-digit code it shows', h('input', { name: 'code', inputmode: 'numeric', pattern: '[0-9]{6}', maxlength: 6, required: true, autocomplete: 'one-time-code' })),
+        h('button', { class: 'btn', type: 'submit' }, 'Turn on'));
+      clear(sec).append(h('h2', {}, 'Set up your authenticator app'), f);
+    }); } },
+      founder ? h('label', {}, 'Netlify setup code', h('span', { class: 'hint' }, 'The value of OPS_FOUNDER_ENROLLMENT_CODE in Netlify → Project configuration → Environment variables. It proves you control the hosting account.'), h('input', { name: 'enrollmentCode', type: 'password', autocomplete: 'off', required: true })) : null,
+      h('button', { class: 'btn', type: 'submit' }, 'Start setup'));
+    sec.append(startForm);
+  } else sec.append(h('h2', {}, 'Your access'), h('p', {}, `${ME.member.roleLabel}. Sign-in links go to ${ME.member.email}. Authenticator: on.`), ME.member.role !== 'founder' ? h('p', { class: 'muted' }, 'To change your access or reset your authenticator, ask Dion.') : null);
   parts.push(sec);
 
   if (can('team.manage')) {
@@ -343,27 +393,165 @@ async function viewTeam() {
       h('label', {}, 'Name', h('input', { name: 'name', required: true, maxlength: 80 })), h('label', {}, 'Email', h('input', { name: 'email', type: 'email', required: true, maxlength: 120 })),
       h('label', {}, 'Role', select('role', t.roles.map(r => r.id).filter(r => r !== 'founder'), 'coordinator')), h('label', {}, 'Title', h('input', { name: 'title', maxlength: 80, placeholder: 'Community & Programs Coordinator' })),
       h('button', { class: 'btn', type: 'submit' }, 'Give access'));
+    const act = (m, action, label, confirmText) => h('button', { class: 'btn small ghost', onclick: async () => { if (confirmText && !confirm(confirmText)) return; await api('PATCH', 'team/' + m.id, { action }); toast('Done'); viewTeam(); } }, label);
     parts.push(h('h2', {}, 'Team members'),
-      h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['Name', 'Email', 'Role', 'Status', 'Last sign-in', ''].map(x => h('th', { scope: 'col' }, x)))),
-        h('tbody', {}, t.members.map(m => h('tr', {}, h('td', {}, m.name, h('br'), h('span', { class: 'muted' }, m.title)), h('td', {}, m.email), h('td', {}, m.roleLabel), h('td', {}, m.status), h('td', {}, fmtDate(m.lastSignInAt)),
+      h('div', { class: 'tablewrap' }, h('table', {}, h('thead', {}, h('tr', {}, ['Name', 'Email', 'Role', 'Status', 'Authenticator', 'Last sign-in', ''].map(x => h('th', { scope: 'col' }, x)))),
+        h('tbody', {}, t.members.map(m => h('tr', {}, h('td', {}, m.name, h('br'), h('span', { class: 'muted' }, m.title)), h('td', {}, m.email), h('td', {}, m.roleLabel), h('td', {}, L(m.status)), h('td', {}, m.mfaEnabled ? 'On' : 'Not set up'), h('td', {}, fmtDate(m.lastSignInAt)),
           h('td', {}, m.id === ME.member.id ? 'You' : h('div', { class: 'row' },
-            m.status === 'revoked' ? h('button', { class: 'btn small ghost', onclick: async () => { await api('PATCH', 'team/' + m.id, { action: 'restore' }); viewTeam(); } }, 'Restore') : h('button', { class: 'btn small ghost', onclick: async () => { if (confirm(`Remove ${m.name}'s access? They will be signed out right away.`)) { await api('PATCH', 'team/' + m.id, { action: 'revoke' }); viewTeam(); } } }, 'Remove access'),
-            m.status === 'active' ? h('button', { class: 'btn small ghost', onclick: async () => { await api('PATCH', 'team/' + m.id, { action: 'sign_out_everywhere' }); toast('Signed out everywhere'); } }, 'Sign out everywhere') : null))))))),
-      h('h2', {}, 'Give someone access'), h('p', { class: 'muted' }, 'They sign in with a link sent to this email. Nobody can sign up on their own.'), form);
+            m.status === 'revoked' ? act(m, 'restore', 'Restore') : act(m, 'revoke', 'Remove access', `Remove ${m.name}'s access? They will be signed out right away.`),
+            m.status === 'active' ? act(m, 'sign_out_everywhere', 'Sign out everywhere') : null,
+            m.mfaEnabled ? act(m, 'reset_authenticator', 'Reset authenticator', `Reset ${m.name}'s authenticator? They'll set up a new one at their next sign-in.`) : null,
+            h('button', { class: 'btn small ghost', onclick: async () => { const email = prompt(`New sign-in email for ${m.name}:`, m.email); if (!email || email === m.email) return; try { await api('PATCH', 'team/' + m.id, { email }); toast('Email changed. Their next sign-in link goes to the new address.'); viewTeam(); } catch (err) { alert(err.message); } } }, 'Change email')))))))),
+      h('h2', {}, 'Give someone access'), h('p', { class: 'muted' }, 'They sign in with a link sent to this email and set up an authenticator app. Nobody can sign up on their own.'), form);
     if (can('audit.view')) {
       const a = await api('GET', 'audit');
       parts.push(h('details', {}, h('summary', {}, 'Activity log (last 200)'), h('ul', {}, a.audit.map(x => h('li', {}, `${new Date(x.at).toLocaleString()} · ${x.action}${x.target ? ' · ' + x.target : ''}`)))));
     }
-  } else if (ME.member.role === 'founder') parts.push(h('div', { class: 'notice warn' }, 'Team management unlocks once your authenticator is on and you\'ve entered a code this session.'));
+  }
   layout('team', ...parts);
+}
+
+// ---------- Approvals ----------
+async function viewApprovals() {
+  const d = await api('GET', 'approvals');
+  const founder = can('approvals.decide');
+  const team = founder ? await api('GET', 'team').catch(() => null) : null;
+  const others = (team?.members || []).filter(m => m.status !== 'revoked' && m.id !== ME.member.id);
+  const card = a => {
+    const decide = founder && a.status === 'pending' ? (() => {
+      const f = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); } },
+        a.itemType === 'document' ? h('label', {}, 'If approved, who sees it', h('select', { name: 'audience' }, h('option', { value: 'team' }, 'Whole team'), h('option', { value: 'founder' }, 'Just me'), others.map(m => h('option', { value: 'm:' + m.id }, 'Only ' + m.name)))) : null,
+        h('label', {}, 'Note (needed if you ask for changes)', h('textarea', { name: 'note', maxlength: 1000 })),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', type: 'button', onclick: () => submitting(f, async () => { const b = formData(f); const body = { decision: 'approved', note: b.note }; if (b.audience) body.audience = b.audience.startsWith('m:') ? [b.audience.slice(2)] : b.audience; await api('POST', `approvals/${a.id}/decide`, body); toast('Approved'); viewApprovals(); }) }, 'Approve'),
+          h('button', { class: 'btn ghost', type: 'button', onclick: () => submitting(f, async () => { await api('POST', `approvals/${a.id}/decide`, { decision: 'changes_requested', note: formData(f).note }); toast('Sent back with your note'); viewApprovals(); }) }, 'Ask for changes')));
+      return f;
+    })() : null;
+    return h('div', { class: 'card' },
+      h('div', { class: 'row' }, h('span', { class: 'tag ' + (a.status === 'pending' ? 'pending' : a.status === 'approved' ? 'approved' : 'draft') }, L(a.status)), h('span', { class: 'tag' }, L(a.itemType))),
+      h('h3', {}, a.title), a.summary ? h('p', { class: 'pre' }, a.summary) : null,
+      a.payload?.message ? h('p', { class: 'mono' }, a.payload.message) : null,
+      a.payload?.channel && a.itemType === 'message' ? h('p', { class: 'muted' }, `Via ${a.payload.channel.replace('_', ' ')} to ${a.payload.to}`) : null,
+      h('p', { class: 'muted' }, `From ${a.submittedByName} · ${fmtDate(a.submittedAt)}`),
+      a.itemType === 'document' && a.itemId ? h('p', {}, h('a', { href: `/operations/api/resources/${a.itemId}/file` }, 'Download the file to review')) : null,
+      a.itemType === 'survey' && a.itemId ? h('p', {}, h('a', { href: `#/research/${a.itemId}` }, 'Read the questions')) : null,
+      a.decisionNote ? h('div', { class: 'notice' }, h('b', {}, 'Dion\'s note: '), a.decisionNote) : null,
+      decide,
+      !founder && ['pending', 'changes_requested'].includes(a.status) ? h('button', { class: 'btn small ghost', onclick: async () => { await api('POST', `approvals/${a.id}/withdraw`); viewApprovals(); } }, 'Withdraw') : null);
+  };
+  const msg = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(msg, async () => { await api('POST', 'approvals', { itemType: 'message', ...formData(msg) }); toast('Sent to Dion for approval'); viewApprovals(); }); } },
+    h('div', { class: 'row' }, h('label', {}, 'Who it goes to', h('input', { name: 'to', required: true, maxlength: 120, placeholder: 'e.g. Denise, Parenting Resources' })), h('label', {}, 'How', select('channel', d.channels, 'email'))),
+    h('label', {}, 'Message', h('textarea', { name: 'message', required: true, maxlength: 3000 })), h('button', { class: 'btn', type: 'submit' }, 'Send for approval'));
+  const pending = d.approvals.filter(a => a.status === 'pending'), back = d.approvals.filter(a => a.status === 'changes_requested'), rest = d.approvals.filter(a => !['pending', 'changes_requested'].includes(a.status));
+  layout('approvals', h('h1', {}, 'Approvals'),
+    h('p', { class: 'sub' }, founder ? 'Everything the team wants to share outside the team waits here for your OK.' : 'Anything that goes outside the team gets Dion\'s OK first. Nothing here is sent automatically; once approved, you send it.'),
+    !founder ? h('details', {}, h('summary', {}, 'Send a message draft for approval'), msg) : null,
+    h('h2', {}, founder ? `Waiting for you (${pending.length})` : `Waiting for Dion (${pending.length})`), pending.length ? h('div', { class: 'grid' }, pending.map(card)) : h('p', { class: 'muted' }, 'Nothing waiting.'),
+    back.length ? [h('h2', {}, 'Changes requested'), h('div', { class: 'grid' }, back.map(card))] : null,
+    rest.length ? h('details', {}, h('summary', {}, 'Decided'), h('div', { class: 'grid' }, rest.map(card))) : null);
+}
+
+// ---------- Social calendar ----------
+async function viewContent() {
+  const [d, docs] = await Promise.all([api('GET', 'content'), api('GET', 'resources')]);
+  const assetSelect = (val) => h('select', { name: 'assetDocumentId' }, h('option', { value: '' }, 'None'), docs.resources.map(r => h('option', { value: r.id, selected: r.id === val }, r.title)));
+  const form = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(form, async () => { await api('POST', 'content', formData(form)); toast('Draft saved'); viewContent(); }); } },
+    h('div', { class: 'row' }, h('label', {}, 'Channel', select('channel', d.channels, 'instagram')), h('label', {}, 'Planned date', h('input', { name: 'plannedDate', type: 'date' }))),
+    h('label', {}, 'Caption', h('span', { class: 'hint' }, 'The tracking link for the channel is added for you.'), h('textarea', { name: 'caption', maxlength: 2200 })),
+    h('label', {}, 'Graphic or file (from Company docs)', assetSelect('')),
+    h('label', {}, 'Notes', h('input', { name: 'notes', maxlength: 1000 })),
+    h('button', { class: 'btn', type: 'submit' }, 'Save draft'));
+  const actions = p => {
+    const mine = p.createdBy === ME.member.id || ME.member.role === 'founder';
+    const b = [];
+    if (mine && ['draft', 'changes_requested'].includes(p.status)) b.push(h('button', { class: 'btn small', onclick: async () => { try { await api('POST', `content/${p.id}/submit`); toast('Sent for approval'); viewContent(); } catch (e) { alert(e.message); } } }, 'Send for approval'));
+    if (['approved', 'scheduled'].includes(p.status)) b.push(h('button', { class: 'btn small', onclick: async () => { const u = prompt('Link to the live post (optional):') ?? ''; try { await api('POST', `content/${p.id}/published`, { publishedUrl: u }); toast('Marked as posted'); viewContent(); } catch (e) { alert(e.message); } } }, 'Mark as posted'));
+    if (p.status === 'approved') b.push(h('button', { class: 'btn small ghost', onclick: async () => { await api('POST', `content/${p.id}/schedule`, {}); viewContent(); } }, 'Mark scheduled'));
+    if (mine && ['idea', 'draft', 'changes_requested', 'approved'].includes(p.status)) b.push(h('button', { class: 'btn small ghost', onclick: async () => { const c = prompt('Edit caption:', p.caption); if (c === null) return; const body = { caption: c }; if (p.status === 'approved') { if (!confirm('This post is approved. Editing it sends it back to Dion for approval. Continue?')) return; body.confirmReapproval = true; } try { await api('PATCH', `content/${p.id}`, body); viewContent(); } catch (e) { alert(e.message); viewContent(); } } }, 'Edit'));
+    if (mine && !['published', 'cancelled'].includes(p.status)) b.push(h('button', { class: 'btn small ghost', onclick: async () => { if (confirm('Cancel this post?')) { await api('POST', `content/${p.id}/cancel`); viewContent(); } } }, 'Cancel'));
+    return h('div', { class: 'row' }, b);
+  };
+  const active = d.posts.filter(p => !['published', 'cancelled'].includes(p.status));
+  const done = d.posts.filter(p => ['published', 'cancelled'].includes(p.status));
+  const card = p => h('div', { class: 'card' },
+    h('div', { class: 'row' }, h('span', { class: 'tag ' + (p.status === 'approved' || p.status === 'published' ? 'approved' : ['in_review', 'changes_requested'].includes(p.status) ? 'pending' : '') }, L(p.status)), h('span', { class: 'tag' }, L(p.channel)), h('span', { class: 'tag' }, p.plannedDate ? fmtDate(p.plannedDate) : 'No date')),
+    h('p', { class: 'pre' }, p.caption || h('span', { class: 'muted' }, 'No caption yet')),
+    h('p', { class: 'muted' }, 'Link: ', p.refLink, p.assetTitle ? ` · Graphic: ${p.assetTitle}` : ''),
+    p.publishedUrl ? h('p', {}, h('a', { href: p.publishedUrl, target: '_blank', rel: 'noopener noreferrer' }, 'View the live post')) : null,
+    h('p', { class: 'muted' }, `By ${p.createdByName || 'team'}`), actions(p));
+  layout('content', h('h1', {}, 'Social calendar'), h('p', { class: 'sub' }, 'Draft posts here. Every post gets Dion\'s OK before it goes live; then post it from the SpinFamily account and mark it posted.'),
+    h('details', { open: !d.posts.length }, h('summary', {}, 'New post'), form),
+    h('h2', {}, 'Coming up'), active.length ? h('div', { class: 'grid' }, active.map(card)) : h('p', { class: 'muted' }, 'No posts planned yet.'),
+    done.length ? h('details', {}, h('summary', {}, `Posted and cancelled (${done.length})`), h('div', { class: 'grid' }, done.map(card))) : null);
+}
+
+// ---------- Research & testing ----------
+async function viewResearch() {
+  const [d, ps] = await Promise.all([api('GET', 'research'), api('GET', 'participants')]);
+  const manage = can('research.manage');
+  const cohortForm = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(cohortForm, async () => { await api('POST', 'research/cohorts', formData(cohortForm)); toast('Cohort added'); viewResearch(); }); } },
+    h('label', {}, 'Name', h('input', { name: 'name', required: true, maxlength: 120, placeholder: "Marilyn's parent testers" })), h('div', { class: 'row' }, h('label', {}, 'Partner', h('input', { name: 'partner', maxlength: 120 })), h('label', {}, 'Planned size', h('input', { name: 'plannedSize', type: 'number', min: 0 })), h('label', {}, 'Results due', h('input', { name: 'deadline', type: 'date' }))),
+    h('label', {}, 'How the testing works', h('textarea', { name: 'protocol', maxlength: 3000, placeholder: 'First session to sign up, then two or three short check-ins over a few days. Free features only.' })), h('button', { class: 'btn', type: 'submit' }, 'Add cohort'));
+  const cohortCard = c => {
+    const box = h('div');
+    const enroll = h('form', { class: 'inline', onsubmit: e => { e.preventDefault(); submitting(enroll, async () => { await api('POST', `research/cohorts/${c.id}/enroll`, formData(enroll)); toast('Added'); viewResearch(); }); } },
+      h('label', {}, 'Participant', h('select', { name: 'participantId', required: true }, ps.participants.map(p => h('option', { value: p.id }, p.firstName)))), h('label', {}, 'Status', select('status', ['invited', 'consented', 'active', 'completed', 'withdrawn'], 'invited')), h('button', { class: 'btn small', type: 'submit' }, 'Add'));
+    const session = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(session, async () => { const b = formData(session); await api('POST', 'research/sessions', { ...b, cohortId: c.id, completed: !!session.querySelector('input[name=completed]:checked') }); toast('Session logged'); viewResearch(); }); } },
+      h('div', { class: 'row' }, h('label', {}, 'Participant', h('select', { name: 'participantId', required: true }, ps.participants.map(p => h('option', { value: p.id }, p.firstName)))), h('label', {}, 'Kind', select('kind', d.sessionKinds, 'initial')), h('label', {}, 'Date', h('input', { name: 'scheduledFor', type: 'date' }))),
+      h('label', { class: 'row' }, h('input', { type: 'checkbox', name: 'completed' }), 'Done'), h('label', {}, 'What you saw', h('textarea', { name: 'observations', maxlength: 3000 })), h('button', { class: 'btn small', type: 'submit' }, 'Log session'));
+    const toggle = h('button', { class: 'btn small ghost', onclick: async () => { const x = await api('GET', `research/cohorts/${c.id}`); clear(box).append(h('h3', {}, 'People'), x.enrollments.length ? h('ul', {}, x.enrollments.map(e => h('li', {}, `${e.firstName}: ${L(e.status)}`))) : h('p', { class: 'muted' }, 'Nobody yet.'), x.hiddenCount ? h('p', { class: 'muted' }, `${x.hiddenCount} more not assigned to you.`) : null, h('h3', {}, 'Sessions'), x.sessions.length ? h('ul', {}, x.sessions.map(s => h('li', {}, `${fmtDate(s.scheduled_for)} · ${L(s.kind)}${s.completed_at ? ' · done' : ''}${s.observations ? ': ' + s.observations : ''}`))) : h('p', { class: 'muted' }, 'None logged.')); } }, 'Show people and sessions');
+    return h('div', { class: 'card' }, h('div', { class: 'row' }, h('span', { class: 'tag ' + (c.status === 'active' ? 'approved' : '') }, L(c.status)), c.deadline ? h('span', { class: 'tag pending' }, 'Due ' + fmtDate(c.deadline)) : null),
+      h('h3', {}, c.name), c.partner ? h('p', { class: 'muted' }, 'With ' + c.partner) : null,
+      h('p', {}, `${c.enrolled}${c.plannedSize ? ' of ' + c.plannedSize + ' planned' : ''} people · ${c.sessionsDone} sessions done`, c.enrolled < (c.plannedSize || 0) ? h('span', { class: 'muted' }, ' (planned, not yet actual)') : null),
+      c.protocol ? h('details', {}, h('summary', {}, 'How it works'), h('p', { class: 'pre' }, c.protocol)) : null,
+      manage ? h('div', { class: 'row' }, select('status', d.cohortStatuses, c.status, { 'aria-label': 'Status', onchange: async e => { await api('PATCH', `research/cohorts/${c.id}`, { status: e.target.value }); viewResearch(); } })) : null,
+      h('details', {}, h('summary', {}, 'Add someone'), enroll), h('details', {}, h('summary', {}, 'Log a session'), session), toggle, box);
+  };
+  const surveyCard = s => h('div', { class: 'card' }, h('div', { class: 'row' }, h('span', { class: 'tag ' + (s.status === 'approved' ? 'approved' : s.status === 'draft' ? 'pending' : 'retired') }, L(s.status)), h('span', { class: 'tag' }, 'Version ' + s.version)),
+    h('h3', {}, h('a', { href: '#/research/' + s.id }, s.title)), h('p', { class: 'muted' }, `${s.questions.length} questions · ${s.invites} links sent · ${s.responses} answered`));
+  layout('research', h('h1', {}, 'Research & testing'), h('p', { class: 'sub' }, 'Testing groups, sessions and the parent questionnaire.'),
+    h('h2', {}, 'Testing groups'), d.cohorts.length ? h('div', { class: 'grid' }, d.cohorts.map(cohortCard)) : h('p', { class: 'muted' }, 'No testing groups yet.'),
+    manage ? h('details', {}, h('summary', {}, 'Add a testing group'), cohortForm) : null,
+    h('h2', {}, 'Questionnaires'), h('div', { class: 'grid' }, d.surveys.map(surveyCard)));
+}
+
+async function viewSurvey(id) {
+  const d = await api('GET', 'research');
+  const s = d.surveys.find(x => x.id === id); if (!s) throw new Error('Not found.');
+  const ps = await api('GET', 'participants');
+  const linkBox = h('div');
+  const invite = h('form', { class: 'inline', onsubmit: e => { e.preventDefault(); submitting(invite, async () => {
+    const r = await api('POST', 'research/invites', { surveyId: s.id, ...formData(invite) });
+    clear(linkBox).append(h('div', { class: 'notice' }, h('p', {}, h('b', {}, 'Private link (shown once, works once, 30 days): ')), h('p', { class: 'mono' }, r.link), h('button', { class: 'btn small', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(r.link); toast('Copied'); } catch { toast('Select the link and copy it'); } } }, 'Copy link'), h('p', { class: 'muted' }, 'Send it to them yourself. Approved message wording is in Approvals.')));
+  }); } },
+    h('label', {}, 'Participant', h('select', { name: 'participantId', required: true }, ps.participants.filter(p => p.isTest !== true).map(p => h('option', { value: p.id }, p.firstName)))),
+    d.cohorts.length ? h('label', {}, 'Testing group (optional)', h('select', { name: 'cohortId' }, h('option', { value: '' }, 'None'), d.cohorts.map(c => h('option', { value: c.id }, c.name)))) : null,
+    h('button', { class: 'btn', type: 'submit' }, 'Create private link'));
+  let results = null;
+  if (s.responses) results = await api('GET', `research/surveys/${s.id}/results`);
+  const edit = h('form', { class: 'stack', onsubmit: e => { e.preventDefault(); submitting(edit, async () => { let qs; try { qs = JSON.parse(formData(edit).questions); } catch { throw new Error('The questions are not valid JSON.'); } const r = await api('PATCH', `research/surveys/${s.id}`, { questions: qs, intro: formData(edit).intro }); toast(s.status === 'draft' ? 'Draft saved' : 'Saved as a new draft version'); location.hash = '#/research/' + r.survey.id; }); } },
+    h('label', {}, 'Introduction', h('textarea', { name: 'intro', maxlength: 1000 }, s.intro)), h('label', {}, 'Questions (advanced: JSON)', h('textarea', { name: 'questions', class: 'mono', rows: 14 }, JSON.stringify(s.questions, null, 2))), h('button', { class: 'btn ghost', type: 'submit' }, s.status === 'draft' ? 'Save draft' : 'Save as a new version'));
+  layout('research', h('p', {}, h('a', { href: '#/research' }, '← Research & testing')), h('h1', {}, `${s.title} (v${s.version})`),
+    h('div', { class: 'notice ' + (s.status === 'approved' ? '' : 'warn') }, s.status === 'approved' ? `Approved ${fmtDate(s.approvedAt)}. Parents can answer it through private links.` : s.status === 'draft' ? 'Draft. Dion has to approve it before any parent sees it.' : 'Retired. A newer version replaced it.'),
+    s.status === 'draft' ? h('button', { class: 'btn', onclick: async () => { try { await api('POST', `research/surveys/${s.id}/submit`); toast('Sent to Dion for approval'); } catch (e) { alert(e.message); } } }, 'Send for approval') : null,
+    s.status === 'approved' ? [h('h2', {}, 'Send it to a parent'), invite, linkBox] : null,
+    results ? [h('h2', {}, `Answers (${results.responses})`), h('div', { class: 'grid' }, results.summary.map(q => h('div', { class: 'card' }, h('b', {}, q.text), h('p', { class: 'muted' }, `${q.answered} answered${q.average !== null && q.average !== undefined ? ' · average ' + q.average : ''}`),
+      q.counts ? h('ul', {}, Object.entries(q.counts).map(([k, v]) => h('li', {}, `${k}: ${v}`))) : null, q.answers?.length ? h('ul', {}, q.answers.map(a => h('li', {}, a))) : q.note ? h('p', { class: 'muted' }, q.note) : null)))] : null,
+    h('h2', {}, 'Questions'), h('p', { class: 'muted' }, s.intro),
+    h('ol', {}, s.questions.map(q => h('li', {}, q.text, h('span', { class: 'muted' }, ` (${q.type === 'choice' ? q.options.join(' / ') : q.type === 'scale' ? `1–${q.max}` : q.type === 'yesno' ? 'yes / no' : 'written answer'})`)))),
+    can('surveys.draft') ? h('details', {}, h('summary', {}, 'Edit'), edit) : null);
 }
 
 // ---------- router ----------
 async function route() {
   if (!ME) return loginScreen();
-  const [, view, id] = (location.hash || '#/dashboard').split('/');
+  let [, view, id] = (location.hash || '#/dashboard').split('/');
+  if (ME.needsAuthenticator || ME.mfa !== 'verified') view = 'team';
   try {
-    if (view === 'participants') await (id ? viewParticipant(id) : viewParticipants());
+    if (view === 'approvals') await viewApprovals();
+    else if (view === 'content') await viewContent();
+    else if (view === 'research') await (id ? viewSurvey(id) : viewResearch());
+    else if (view === 'participants') await (id ? viewParticipant(id) : viewParticipants());
     else if (view === 'followups') await viewFollowups();
     else if (view === 'outreach') await viewOutreach();
     else if (view === 'relationships') await (id ? viewRelationship(id) : viewRelationships());
