@@ -317,3 +317,83 @@ test('existing welcome email and scheduled batch are untouched', () => {
   const batch = readFileSync(new URL('../netlify/functions/welcome-batch-20261125.mjs', import.meta.url), 'utf8');
   assert.match(batch, /schedule:'0 14 25 11 \*'/);
 });
+
+// ---------- Company docs: uploads and sharing ----------
+const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(200, 32), Buffer.from('%%EOF')]);
+const up = (title, extra = {}, bytes = PDF, fileName = 'one-pager.pdf') => ({ title, fileName, dataBase64: bytes.toString('base64'), category: 'outreach', ...extra });
+async function rawGet(w, path, sid) {
+  return handle(new Request(`${ORIGIN}/operations/api/${path}`, { headers: { cookie: `${SESSION_COOKIE}=${sid}` } }), w.deps);
+}
+
+test('founder shares a file with the team; coordinator can list and download it, with safe headers', async () => {
+  const w = world();
+  const { sid, csid } = await withCoordinator(w);
+  const mailsBefore = w.mail.length;
+  const r = await w.call('POST', 'resources/upload', up('PRC one-pager', { audience: 'team', notify: true }), { cookie: sid });
+  assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.resource.contentType, 'application/pdf'); assert.equal(r.body.resource.fileKey, undefined);
+  assert.equal(r.body.notified, 1); assert.equal(w.mail.length, mailsBefore + 1); assert.equal(w.mail.at(-1).to.address, COORD);
+  assert.match(w.mail.at(-1).text, /operations\/#\/docs/); assert.doesNotMatch(w.mail.at(-1).text, /resources\/.*\/file/);
+  const list = (await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources;
+  const doc = list.find(x => x.title === 'PRC one-pager'); assert.ok(doc);
+  const res = await rawGet(w, `resources/${doc.id}/file`, csid);
+  assert.equal(res.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await res.arrayBuffer()), PDF), 0);
+  assert.match(res.headers.get('content-disposition'), /^attachment;/);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.match(res.headers.get('content-security-policy'), /sandbox/);
+});
+
+test('documents kept to the founder or to named people stay hidden from everyone else', async () => {
+  const w = world();
+  const { sid, csid, coordId } = await withCoordinator(w);
+  const inv = await w.call('POST', 'team/invite', { email: 'second@example.com', name: 'Second Person', role: 'coordinator' }, { cookie: sid });
+  const ssid = await w.signIn('second@example.com');
+  const priv = (await w.call('POST', 'resources/upload', up('Founder notes', { audience: 'founder' }), { cookie: sid })).body.resource;
+  const named = (await w.call('POST', 'resources/upload', up('For coordinator', { audience: [coordId] }), { cookie: sid })).body.resource;
+  const titles = async s => (await w.call('GET', 'resources', undefined, { cookie: s })).body.resources.map(r => r.title);
+  assert.ok(!(await titles(csid)).includes('Founder notes'));
+  assert.ok((await titles(csid)).includes('For coordinator'));
+  assert.ok(!(await titles(ssid)).includes('For coordinator'));
+  assert.equal((await rawGet(w, `resources/${priv.id}/file`, csid)).status, 404);
+  assert.equal((await rawGet(w, `resources/${named.id}/file`, ssid)).status, 404);
+  assert.equal((await rawGet(w, `resources/${named.id}/file`, csid)).status, 200);
+  assert.ok(inv.body.member.id);
+});
+
+test('coordinator uploads go to the founder for review and cannot be re-shared by the coordinator', async () => {
+  const w = world();
+  const { sid, csid } = await withCoordinator(w);
+  await w.call('POST', 'team/invite', { email: 'second@example.com', name: 'Second Person', role: 'coordinator' }, { cookie: sid });
+  const ssid = await w.signIn('second@example.com');
+  const before = w.mail.length;
+  const r = await w.call('POST', 'resources/upload', up('Draft flyer', { audience: 'team', approval: 'approved' }), { cookie: csid });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.resource.approval, 'pending_review'); assert.equal(r.body.resource.audience, 'founder');
+  assert.equal(w.mail.length, before + 1); assert.equal(w.mail.at(-1).to.address, FOUNDER_EMAIL);
+  assert.ok((await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources.some(x => x.id === r.body.resource.id), 'uploader sees own');
+  assert.ok(!(await w.call('GET', 'resources', undefined, { cookie: ssid })).body.resources.some(x => x.id === r.body.resource.id));
+  assert.equal((await w.call('PATCH', `resources/${r.body.resource.id}`, { audience: 'team' }, { cookie: csid })).status, 403);
+  const shared = await w.call('PATCH', `resources/${r.body.resource.id}`, { audience: 'team', approval: 'approved' }, { cookie: sid });
+  assert.equal(shared.status, 200);
+  assert.ok((await w.call('GET', 'resources', undefined, { cookie: ssid })).body.resources.some(x => x.id === r.body.resource.id));
+});
+
+test('only real documents and images under 4 MB are accepted', async () => {
+  const w = world();
+  const { sid } = await w.founderReady();
+  const html = Buffer.from('<html><script>alert(1)</script></html>'.padEnd(40, ' '));
+  for (const [bytes, name] of [[html, 'trick.pdf'], [html, 'page.html'], [Buffer.from('MZ' + 'x'.repeat(40)), 'tool.exe'], [PDF, 'one-pager.png'], [Buffer.alloc(0), 'empty.pdf']])
+    assert.equal((await w.call('POST', 'resources/upload', up('Bad', {}, bytes, name), { cookie: sid })).status, 400, name);
+  const big = Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(4 * 1024 * 1024 + 10)]);
+  assert.equal((await w.call('POST', 'resources/upload', up('Big', {}, big), { cookie: sid })).status, 400);
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
+  const ok = await w.call('POST', 'resources/upload', up('Logo', {}, png, '../../Logo final!.png'), { cookie: sid });
+  assert.equal(ok.status, 201); assert.equal(ok.body.resource.fileName, 'Logo final.png');
+});
+
+test('founder uploads need the authenticator code; signed-out requests get nothing', async () => {
+  const w = world();
+  const sid = await w.signIn(FOUNDER_EMAIL);
+  assert.equal((await w.call('POST', 'resources/upload', up('x'), { cookie: sid })).status, 403);
+  assert.equal((await w.call('POST', 'resources/upload', up('x'))).status, 401);
+});

@@ -20,6 +20,7 @@ const MATRIX = {
   'relationships.record': ['founder', 'coordinator'],
   'relationships.approveOffer': ['founder'],
   'resources.view': ['founder', 'coordinator'],
+  'resources.upload': ['founder', 'coordinator'],
   'resources.manage': ['founder'],
   'team.manage': ['founder'],
   'audit.view': ['founder'],

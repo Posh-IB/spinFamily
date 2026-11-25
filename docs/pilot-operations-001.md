@@ -8,8 +8,9 @@
 | Milestone | State | Notes |
 |---|---|---|
 | M0 Reconciliation & architecture | Completed | This record. Branch created from the verified `landing` commit. |
-| M1 Secure workspace foundation | Completed, validated locally | Invite-only sign-in, roles, sessions, founder authenticator, audit log, 26 workspace tests. |
+| M1 Secure workspace foundation | Completed, validated locally | Invite-only sign-in, roles, sessions, founder authenticator, audit log. 31 workspace tests in total. |
 | M2 Recruitment operations | Completed, validated locally | Form intake, participant registry, dashboard, follow-ups, outreach log, relationships, materials. |
+| M2.1 Company docs | Completed, validated locally | Upload files (≤ 4 MB), choose who sees each one, email a heads-up, download behind sign-in. Added Nov 24 at the founder's request. |
 | M3 Onboarding reconciliation | Pending | Landing-page "Open the app / no download" change, account verification workflow. |
 | M4 Research & survey | Pending | Questionnaire draft needs founder/research approval first. |
 | M5 RICC evidence integration | Pending | Envelope designed in §8; no RICC writes. |
@@ -37,7 +38,7 @@ landing-site/lib/ops/api.mjs           all endpoints, intake, dashboard
 landing-site/netlify/functions/ops-api.mjs     /operations/api/* (rate-limited 120/min per IP)
 landing-site/netlify/functions/ops-intake.mjs  pilot form → participant record (no email)
 landing-site/public/operations/        workspace page, script, styles
-landing-site/tests/ops.test.mjs        26 tests
+landing-site/tests/ops.test.mjs        31 tests
 netlify.toml                           CSP and no-index headers for /operations/*
 ```
 
@@ -55,7 +56,8 @@ Not touched: `index.html`, `thanks.html`, `_redirects`, `robots.txt`, the source
 | `followups/{id}` | Action, subject, due date, assignee, status, outcome |
 | `outreach/{id}` | Field report; unknown counts stay null, never 0 |
 | `relationships/{id}` | Institutional contact, stage, next action, contact log, offer-approval flag |
-| `resources/{id}` | Material link, intended use, approval state |
+| `resources/{id}` | Company doc: link or uploaded file, category, intended use, approval state, audience (`team`, `founder`, or named member ids), uploader |
+| `files/{id}` | Uploaded file bytes (served only through the signed-in download endpoint) |
 | `audit/{ts}` | Actor id, action, target id. No names or emails. |
 
 No child names, birthdays, schools, photos or health details are collected. The intake keeps only the form's existing "children under 10" bucket.
@@ -73,8 +75,9 @@ No child names, birthdays, schools, photos or health details are collected. The 
 | Follow-ups | All | Own only; can assign only to self |
 | Outreach log, relationships, contact log | Yes | Yes |
 | Approve offers to a relationship | With authenticator | No |
-| Materials: view | All | Non-retired |
-| Materials: add, approve, retire | With authenticator | No |
+| Company docs: view | All | Shared with the whole team or with them, plus their own uploads |
+| Company docs: upload | With authenticator; chooses who sees it | Yes; goes to the founder for review, visible only to the founder and uploader |
+| Company docs: approve, re-share, retire | With authenticator | No |
 | Team: invite, remove, sign out everywhere | With authenticator | No |
 | Audit log | With authenticator | No |
 | Export, delete participant data, send email | Not built | No |
@@ -96,10 +99,12 @@ No child names, birthdays, schools, photos or health details are collected. The 
 | Script injection | No HTML parsing of data; CSP `script-src 'self'`, no inline script | ✓ (source check) |
 | Preview data leaking into production | Separate stores; preview shortcut off in production | ✓ |
 | Duplicate form events | Idempotent intake per email | ✓ |
+| Malicious upload (HTML, scripts, executables, renamed files) | Type checked from file bytes against an allow-list (PDF, DOCX, XLSX, PPTX, PNG, JPG, WebP); served as a download with `nosniff` and `CSP: sandbox`; file names cleaned; 4 MB cap | ✓ |
+| Doc seen by the wrong person | Audience checked on list and on every download; unknown ids return not found | ✓ |
 | Workspace emails parents | Intake never sends; no send endpoint exists | ✓ |
 | PII in logs | Audit stores ids/actions only | ✓ |
 
-Residual risks: Blobs has no per-record encryption beyond Netlify's at-rest encryption; the authenticator secret is stored server-side in the same store; there is no IP allow-list; sign-in email depends on the Purelymail mailbox.
+Residual risks: uploaded files are not virus-scanned (Office files can carry macros; open them only from trusted teammates); Blobs has no per-record encryption beyond Netlify's at-rest encryption; the authenticator secret is stored server-side in the same store; there is no IP allow-list; sign-in email depends on the Purelymail mailbox.
 
 ## 7. Privacy and tracking inventory (workspace)
 
