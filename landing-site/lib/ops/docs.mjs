@@ -1,7 +1,10 @@
 // Company docs: shared links and uploaded files. File bytes live in Netlify Blobs; metadata in Postgres.
 import { json, fail, notFound, Invalid, newId, iso, text, oneOf, url, row, asJson } from './util.mjs';
-import { orgMembers, sendTo } from './core.mjs';
-import { submitForApproval } from './approvals.mjs';
+import { orgMembers } from './core.mjs';
+import { submitForApproval, supersedePending } from './approvals.mjs';
+import { inTx } from './db.mjs';
+import { enqueue } from './outbox.mjs';
+import { createHash } from 'node:crypto';
 
 export const MAX_FILE_BYTES = 4 * 1024 * 1024; // Netlify functions accept about 6 MB per request; base64 adds a third
 export const APPROVAL = ['approved', 'pending_review', 'draft', 'retired'];
@@ -36,7 +39,7 @@ function cleanFileName(name) {
   return (base || 'file').slice(-120);
 }
 
-const toDoc = r => { const d = row(r); return { id: d.id, kind: d.kind, title: d.title, url: d.url, intendedUse: d.intended_use, category: d.category, approval: d.approval, audience: d.audience, fileName: d.file_name, contentType: d.content_type, size: d.size, uploadedBy: d.uploaded_by, uploadedByName: d.uploaded_by_name || null, createdAt: d.created_at, updatedAt: d.updated_at, fileKey: d.file_key }; };
+const toDoc = r => { const d = row(r); return { id: d.id, version: d.version, kind: d.kind, title: d.title, url: d.url, intendedUse: d.intended_use, category: d.category, approval: d.approval, audience: d.audience, fileName: d.file_name, contentType: d.content_type, size: d.size, uploadedBy: d.uploaded_by, uploadedByName: d.uploaded_by_name || null, createdAt: d.created_at, updatedAt: d.updated_at, fileKey: d.file_key }; };
 const publicDoc = d => { const { fileKey, ...rest } = d; return rest; };
 export async function getDoc(env, id) {
   const r = (await env.sql`SELECT d.*, m.name AS uploaded_by_name FROM documents d LEFT JOIN members m ON m.id = d.uploaded_by WHERE d.id = ${id} AND d.org_id = ${env.orgId}`)[0];
@@ -60,17 +63,15 @@ export async function parseAudience(v, env) {
   for (const id of ids) if (!members.some(m => m.id === id && m.status !== 'revoked')) throw new Invalid('Unknown team member');
   return ids;
 }
+// Queued in the caller's transaction; sent after commit (R2-04).
 export async function notifyShare(env, doc) {
   const members = (await orgMembers(env)).filter(m => m.status !== 'revoked' && m.id !== env.member.id);
   const a = doc.audience || 'team';
   const to = a === 'team' ? members : a === 'founder' ? members.filter(m => m.role === 'founder') : members.filter(m => a.includes(m.id));
-  let sent = 0;
-  for (const m of to) {
-    try { await sendTo(env, m, `Shared with you: ${doc.title}`, `${env.member.name} shared "${doc.title}" with you in SpinFamily Operations.\n\n${doc.intendedUse ? doc.intendedUse + '\n\n' : ''}Open Company docs: ${env.origin}/operations/#/docs\n\nYou'll need to be signed in.`); sent++; }
-    catch { await env.audit('docs.notify_failed', doc.id); }
-  }
-  return sent;
+  for (const m of to) await enqueue(env, m, `Shared with you: ${doc.title}`, `${env.member.name} shared "${doc.title}" with you in SpinFamily Operations.\n\n${doc.intendedUse ? doc.intendedUse + '\n\n' : ''}Open Company docs: ${env.origin}/operations/#/docs\n\nYou'll need to be signed in.`);
+  return to.length;
 }
+const held = () => fail(403, 'feature_held', 'File uploads and downloads are switched off until file scanning is approved. Share a Google Drive link instead.');
 
 async function seed(env) {
   const seeded = await env.sql`INSERT INTO org_meta (org_id, key, value) VALUES (${env.orgId}, 'docs_seeded', ${asJson({ at: iso(env.now()) })}::jsonb) ON CONFLICT DO NOTHING RETURNING key`;
@@ -85,11 +86,12 @@ export async function docRoutes(parts, method, body, env) {
   await seed(env);
   if (method === 'GET' && !parts.length) {
     const all = (await env.sql`SELECT d.*, m.name AS uploaded_by_name FROM documents d LEFT JOIN members m ON m.id = d.uploaded_by WHERE d.org_id = ${env.orgId} ORDER BY d.created_at DESC LIMIT 500`).map(toDoc);
-    return json({ resources: all.filter(d => canSee(d, env)).map(publicDoc), approvals: APPROVAL, categories: DOC_CATEGORIES, maxFileBytes: MAX_FILE_BYTES });
+    return json({ resources: all.filter(d => canSee(d, env)).map(publicDoc), approvals: APPROVAL, categories: DOC_CATEGORIES, maxFileBytes: MAX_FILE_BYTES, uploadsEnabled: !!env.features?.has('uploads') });
   }
 
   if (method === 'POST' && parts[0] === 'upload') {
     env.need('resources.upload');
+    if (!env.features?.has('uploads')) return held();
     const isFounder = me.role === 'founder';
     if (isFounder) env.need('resources.manage');
     const title = text(body.title, 'Title', 120, { required: true });
@@ -103,21 +105,28 @@ export async function docRoutes(parts, method, body, env) {
     const audience = isFounder ? await parseAudience(body.audience, env) : 'founder';
     const approval = isFounder ? oneOf(body.approval, 'approval', APPROVAL, 'approved') : 'pending_review';
     const now = iso(env.now()), id = newId('res'), fileKey = `files/${env.orgId}/${id}`;
-    await env.files.put(fileKey, bytes, { resourceId: id, contentType: kind.type });
-    await env.sql`INSERT INTO documents (id, org_id, kind, title, intended_use, category, approval, audience, file_name, content_type, size, file_key, uploaded_by, created_at, updated_at)
-      VALUES (${id}, ${env.orgId}, 'file', ${title}, ${text(body.intendedUse, "What it's for", 300)}, ${oneOf(body.category, 'category', DOC_CATEGORIES, 'other')}, ${approval}, ${asJson(audience)}::jsonb,
-      ${fileName}, ${kind.type}, ${bytes.length}, ${fileKey}, ${me.id}, ${now}, ${now})`;
-    await env.audit('docs.uploaded', id, { size: bytes.length, audience: Array.isArray(audience) ? 'named' : audience });
-    const doc = await getDoc(env, id);
-    let notified = 0;
-    if (isFounder) { if (body.notify === true) notified = await notifyShare(env, doc); }
-    else await submitForApproval(env, { itemType: 'document', itemId: id, title: `Doc: ${title}`, summary: doc.intendedUse || `${fileName} uploaded for review` });
-    return json({ resource: publicDoc(doc), notified }, 201);
+    const intendedUse = text(body.intendedUse, "What it's for", 300), category = oneOf(body.category, 'category', DOC_CATEGORIES, 'other');
+    const fileSha = createHash('sha256').update(bytes).digest('hex');
+    // Bytes first (an orphaned blob has no record and is never served); then record, approval
+    // request and notifications in one transaction.
+    await env.files.put(fileKey, bytes, { resourceId: id, contentType: kind.type, sha256: fileSha });
+    const notified = await inTx(env, async t => {
+      await t.sql`INSERT INTO documents (id, org_id, kind, title, intended_use, category, approval, audience, file_name, content_type, size, file_key, file_sha256, uploaded_by, created_at, updated_at)
+        VALUES (${id}, ${t.orgId}, 'file', ${title}, ${intendedUse}, ${category}, ${approval}, ${asJson(audience)}::jsonb,
+        ${fileName}, ${kind.type}, ${bytes.length}, ${fileKey}, ${fileSha}, ${me.id}, ${now}, ${now})`;
+      await t.audit('docs.uploaded', id, { size: bytes.length, audience: Array.isArray(audience) ? 'named' : audience });
+      const doc = await getDoc(t, id);
+      if (isFounder) return body.notify === true ? notifyShare(t, doc) : 0;
+      await submitForApproval(t, { itemType: 'document', itemId: id, title: `Doc: ${title}`, summary: doc.intendedUse || `${fileName} uploaded for review` });
+      return 0;
+    });
+    return json({ resource: publicDoc(await getDoc(env, id)), notified }, 201);
   }
 
   if (parts[0] && parts[1] === 'file' && method === 'GET') {
     const d = await getDoc(env, parts[0]);
     if (!d || d.kind !== 'file' || !canSee(d, env)) return notFound();
+    if (!env.features?.has('uploads')) return held();
     const f = await env.files.get(d.fileKey);
     if (!f) return fail(404, 'not_found', 'File missing.');
     await env.audit('docs.downloaded', d.id);
@@ -132,13 +141,14 @@ export async function docRoutes(parts, method, body, env) {
   if (method === 'POST' && !parts.length) {
     const now = iso(env.now()), id = newId('res');
     const audience = await parseAudience(body.audience, env);
-    await env.sql`INSERT INTO documents (id, org_id, kind, title, url, intended_use, category, approval, audience, uploaded_by, created_at, updated_at)
-      VALUES (${id}, ${env.orgId}, 'link', ${text(body.title, 'title', 120, { required: true })}, ${url(body.url, 'link')}, ${text(body.intendedUse, 'intended use', 300)}, ${oneOf(body.category, 'category', DOC_CATEGORIES, 'other')},
-      ${oneOf(body.approval, 'approval', APPROVAL, 'draft')}, ${asJson(audience)}::jsonb, ${me.id}, ${now}, ${now})`;
-    await env.audit('docs.link_added', id);
-    const doc = await getDoc(env, id);
-    if (body.notify === true) await notifyShare(env, doc);
-    return json({ resource: publicDoc(doc) }, 201);
+    const v = { title: text(body.title, 'title', 120, { required: true }), url: url(body.url, 'link'), intendedUse: text(body.intendedUse, 'intended use', 300), category: oneOf(body.category, 'category', DOC_CATEGORIES, 'other'), approval: oneOf(body.approval, 'approval', APPROVAL, 'draft') };
+    await inTx(env, async t => {
+      await t.sql`INSERT INTO documents (id, org_id, kind, title, url, intended_use, category, approval, audience, uploaded_by, created_at, updated_at)
+        VALUES (${id}, ${t.orgId}, 'link', ${v.title}, ${v.url}, ${v.intendedUse}, ${v.category}, ${v.approval}, ${asJson(audience)}::jsonb, ${me.id}, ${now}, ${now})`;
+      await t.audit('docs.link_added', id);
+      if (body.notify === true) await notifyShare(t, await getDoc(t, id));
+    });
+    return json({ resource: publicDoc(await getDoc(env, id)) }, 201);
   }
   if (method === 'PATCH' && parts[0]) {
     const d = await getDoc(env, parts[0]); if (!d) return notFound();
@@ -149,11 +159,17 @@ export async function docRoutes(parts, method, body, env) {
       category: body.category !== undefined ? oneOf(body.category, 'category', DOC_CATEGORIES) : d.category,
       audience: body.audience !== undefined ? await parseAudience(body.audience, env) : d.audience,
     };
-    await env.sql`UPDATE documents SET approval = ${next.approval}, intended_use = ${next.intendedUse}, title = ${next.title}, category = ${next.category}, audience = ${asJson(next.audience)}::jsonb, updated_at = ${iso(env.now())} WHERE id = ${d.id}`;
-    await env.audit('docs.updated', d.id, { approval: next.approval });
-    const doc = await getDoc(env, d.id);
-    const notified = body.notify === true && JSON.stringify(next.audience) !== JSON.stringify(d.audience) ? await notifyShare(env, doc) : 0;
-    return json({ resource: publicDoc(doc), notified });
+    const contentChanged = next.title !== d.title || next.intendedUse !== d.intendedUse || next.category !== d.category;
+    const notified = await inTx(env, async t => {
+      const r = await t.sql`UPDATE documents SET approval = ${next.approval}, intended_use = ${next.intendedUse}, title = ${next.title}, category = ${next.category}, audience = ${asJson(next.audience)}::jsonb, updated_at = ${iso(t.now())},
+        version = version + ${contentChanged ? 1 : 0} WHERE id = ${d.id} AND version = ${Number.isInteger(body.version) ? body.version : d.version} RETURNING id`;
+      if (!r[0]) { const e = new Error('conflict'); e.conflict = true; throw e; }
+      // The founder deciding directly here settles any open request for this doc.
+      if (contentChanged || body.approval !== undefined) await supersedePending(t, 'document', d.id, contentChanged ? 'Changed after it was sent for review' : 'Decided directly in Company docs');
+      await t.audit('docs.updated', d.id, { approval: next.approval });
+      return body.notify === true && JSON.stringify(next.audience) !== JSON.stringify(d.audience) ? notifyShare(t, await getDoc(t, d.id)) : 0;
+    });
+    return json({ resource: publicDoc(await getDoc(env, d.id)), notified });
   }
   return notFound();
 }

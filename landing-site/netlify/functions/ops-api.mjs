@@ -2,20 +2,33 @@ import { getDatabase } from '@netlify/database';
 import nodemailer from 'nodemailer';
 import { handle, PRODUCTION_ORIGIN } from '../../lib/ops/core.mjs';
 import { filesFor } from '../../lib/ops/files.mjs';
-import { runtimeFacts, OPS_ORG } from '../../lib/ops/runtime.mjs';
+import { makeDb } from '../../lib/ops/db.mjs';
+import { checkEnvironment } from '../../lib/ops/environment.mjs';
+import { runtimeFacts, secretsFor, featuresFrom, OPS_ORG } from '../../lib/ops/runtime.mjs';
 import { config as smtpConfig, MAILBOX } from '../../lib/pilot-welcome.mjs';
 
-const db = getDatabase();
+// The database client is created only after the request has passed the site/context guard (R2-02),
+// and the database itself must then prove it is the right kind for this deploy.
+let db = null, environmentOk = null;
+const refuse = (state, extra = {}) => {
+  console.warn(JSON.stringify({ component: 'ops-api', state, ...extra }));
+  return new Response('The operations workspace is not available on this deploy.', { status: 503, headers: { 'cache-control': 'no-store', 'x-robots-tag': 'noindex' } });
+};
 
 // SpinFamily Pilot Operations API. Every request is authenticated inside handle().
 export default async (req, context) => {
   const facts = runtimeFacts(context);
-  if (!facts.rightSite) {
-    console.warn(JSON.stringify({ component: 'ops-api', state: 'refused_unknown_site' }));
-    return new Response('Unavailable', { status: 503 });
+  if (!facts.rightSite) return refuse('refused_unknown_site');
+  if (!facts.supported) return refuse('refused_unsupported_context', { deployContext: facts.deployContext });
+  db ??= makeDb(getDatabase().pool);
+  if (!environmentOk) {
+    const env = await checkEnvironment(db.sql, facts);
+    if (!env.ok) return refuse('refused_database_environment', { reason: env.reason });
+    environmentOk = env;
   }
   return handle(req, {
     sql: db.sql,
+    tx: db.tx,
     files: filesFor(facts.isProduction),
     orgId: OPS_ORG,
     now: () => Date.now(),
@@ -24,7 +37,8 @@ export default async (req, context) => {
     deployContext: facts.isProduction ? 'production' : facts.deployContext,
     netlifyUser: context?.user || null,
     mailbox: MAILBOX,
-    founderEnrollmentCode: Netlify.env.get('OPS_FOUNDER_ENROLLMENT_CODE') || null,
+    secrets: secretsFor(facts, k => Netlify.env.get(k)),
+    features: featuresFrom(Netlify.env.get('OPS_FEATURES')),
     sendMail: async message => {
       // The real mailbox only sends from production. Previews sign in with Netlify team login instead.
       if (!facts.isProduction) throw new Error('Email is turned off outside production');

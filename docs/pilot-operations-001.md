@@ -46,6 +46,19 @@
 | **IR-08** open landing items | Unchanged and still open: A01–A04 landing privacy/onboarding fixes, A07 account confirmation/activation reconciliation, A10 live accessibility check. A11 (Nov 25 batch) preserved: no changes to `welcome-batch-20261125` or `pilot-welcome`. | source checks |
 | **IR-09** authorized backfill | Founder-only import (with authenticator) of earlier form submissions or beta users, with source, export date and submitted date recorded per row; existing emails skipped; imported rows start as "not reviewed". Until the founder marks the backfill complete, the dashboard labels registration and beta counts **incomplete** instead of implying zero. No PII in code. | provenance kept; duplicates skipped; incomplete → actual only after backfill |
 
+## 3a. Gideon's second review (review 6051609689 on `8df591f`): R2 remediation
+
+| Blocker | What changed | Evidence |
+|---|---|---|
+| R2-01 sign-in races | `members.auth_generation`. Link issue, link claim, session creation, MFA, authenticator setup/confirm, recovery and every team change run in one Postgres transaction that locks the member (order: member → session → links). Links carry the generation and address they were issued to; sessions carry the generation. Every access change (email change, revoke, restore, sign out everywhere, reset, recovery, new authenticator) bumps the generation, cancels links and ends sessions. Setup returns a `setupId`; confirm consumes that exact pending factor once. Separate one-time bootstrap and recovery secrets, read under different names in production and previews; identical values refused; each recovery value works once; founder emailed on recovery. Wrong codes limited per person (10 per 15 min) across sessions as well as per session. | `tests/ops-r2.test.mjs`: issue vs email change (both orders), issue vs revoke / sign-out-all / reset, claim vs revoke (both orders), restore, same TOTP on two sessions, exact factor confirmation, confirm vs reset, per-person throttle, one-time bootstrap. Each uses a named pause point plus a check that the second request is actually waiting on a Postgres lock. |
+| R2-02 preview isolation | Only `production`, `deploy-preview` and `branch-deploy` on the right site are served; the database client is created after that check. `ops_environment` marker: production marks a fresh database `production`; a preview refuses a `production` database (any fork of production), refuses an unmarked database that holds records, and marks an empty one `synthetic`; production refuses `synthetic`. The intake function checks the marker too. Mail stays production-only. | Marker matrix test; source checks on both functions. After launch, previews of the workspace switch themselves off unless their database branch is reset to empty. |
+| R2-03 metrics and intake | Registrations come from the intake ledger (live form or reconciled import), counting reviewed, non-test, non-withdrawn people, with households counted separately (`household_key`). `cohort_memberships` records each program with its evidence. Activation no longer counts `pilot_completed`. Imports need a source id and consent value/version per row, write ledger rows, and produce a receipt that reconciles against the export's row count; backfill completion needs a reconciled receipt per required source and no open conflicts. Intake (ledger + person + program + history) is one transaction under advisory locks; the same submission id with different content goes to `intake_conflicts`. Withdrawal workflow, and governed redaction (append-only tables accept UPDATE only inside the redaction transaction, which writes `redaction_events`). | Fault injection between intake statements, parallel same-id deliveries, same-id conflict, partial backfill, prospect conversion, test/unreviewed/withdrawn, households, pilot_completed, redaction. |
+| R2-04 approvals | Approvals store the complete reviewable content (`snapshot`), its SHA-256 `digest` and the item version. Any edit supersedes the pending request in the same transaction. One pending request per item and one approved questionnaire version (unique indexes). Decide locks the request and the item, re-checks the digest, and writes decision + item change + audit + notification together. Notifications go through `notifications_outbox` and are sent after commit. | Stale survey revision, edit queued behind a decision, approve vs withdraw, fault between decision writes, outbox under mail outage, uniqueness. |
+| R2-05 research | `research_consents` (notice version, purpose, method, withdrawal); nobody can set an enrollment to "consented". Participation notice `SF-RN-2026-11-v1` needs founder approval; the parent ticks an unticked box on the survey page. Links need a reviewed, non-withdrawn, non-opted-out, in-scope person, an approved questionnaire and the approved notice; one active link per person and questionnaire; one response per person and questionnaire; claim + consent + response in one transaction with every check repeated at submit. Withdraw button on the survey page; withdrawals recorded in `research_withdrawals`. Coordinators never see fewer than 5 responses and small cells show as "<5" with a second cell hidden. Survey links for real families stay off until `OPS_FEATURES` includes `research`. | Eligibility and scope, link replacement, fault between claim and insert, withdrawal vs submit (both orders), small-cell suppression, notice version. |
+| Operational | Lists bounded (participants paged at 200; others capped). File uploads and downloads held behind `OPS_FEATURES=uploads`. | |
+
+Tests now run on a real PostgreSQL 17 server (embedded-postgres) with a 12-connection pool instead of the single-connection PGlite engine.
+
 ## 4. What's in the branch
 
 ```
@@ -92,9 +105,12 @@ Residual risks: preview database branches can hold production data copies (previ
 
 ## 7. Founder setup before launch
 
-1. In Netlify → `spinfamily-landing` → Project configuration → Environment variables, add `OPS_FOUNDER_ENROLLMENT_CODE` (a long random phrase you keep somewhere safe), scoped to Functions, all deploy contexts.
-2. Confirm the SMTP variables are available to Functions in production (the welcome email already depends on them).
-3. After launch: sign in at `spinfamilyapp.com/operations/`, set up your authenticator with the setup code, add Lindsey at her SpinFamily work address (recorded in the restricted workforce packet, not in this public repo), import earlier sign-ups and beta testers, and mark the backfill complete.
+1. In Netlify → `spinfamily-landing` → Project configuration → Environment variables, add four Functions-scoped variables, each a different long random phrase kept somewhere safe (R2-01):
+   - Production context only: `OPS_FOUNDER_BOOTSTRAP_CODE` (works once, for your first authenticator) and `OPS_FOUNDER_RECOVERY_CODE` (works once per value, if you lose your phone; set a new value after using it).
+   - Deploy previews / branch deploys only: `OPS_PREVIEW_BOOTSTRAP_CODE` and `OPS_PREVIEW_RECOVERY_CODE`. Previews never read the production names. The same value for setup and recovery is refused.
+2. Optional features stay off unless `OPS_FEATURES` lists them: `uploads` (file uploads/downloads; off until file scanning is approved) and `research` (survey links for real families; off until research is approved).
+3. Confirm the SMTP variables are available to Functions in production (the welcome email already depends on them).
+4. After launch: sign in at `spinfamilyapp.com/operations/`, set up your authenticator with the bootstrap code, add Lindsey at her SpinFamily work address (recorded in the restricted workforce packet, not in this public repo), import earlier sign-ups and beta testers with their export row counts, and mark the backfill complete once each required source has a reconciled receipt.
 
 ## 8. Privacy and tracking (workspace)
 
@@ -121,9 +137,10 @@ Destinations to be validated against the current RICC build and its independent 
 | # | Item | Owner |
 |---|---|---|
 | 1 | Independent retest of this remediation; production approval after the Nov 25 batch is reconciled | Gideon, Founder |
-| 2 | Set `OPS_FOUNDER_ENROLLMENT_CODE`; confirm SMTP variables for production functions | Founder |
-| 3 | Retention periods and a participant deletion/withdrawal workflow (append-only history means deletion needs a governed redaction design) | Founder, Compliance |
-| 4 | Approve the questionnaire wording (v1 draft in the workspace) | Founder |
+| 2 | Set the four bootstrap/recovery variables (§7); confirm SMTP variables for production functions | Founder |
+| 3 | Retention periods. The withdrawal and governed redaction workflow now exists (R2-03); the periods themselves are a founder/compliance decision | Founder, Compliance |
+| 4 | Approve the questionnaire wording and the participation notice `SF-RN-2026-11-v1` (both in the workspace), then add `research` to `OPS_FEATURES` | Founder |
+| 4a | File scanning for uploads; until then `uploads` stays off | Founder |
 | 5 | Confirm Netlify Database credit usage is acceptable on the team plan | Founder |
 | 6 | Verify the form event's id/timestamp fields on the first production submission (intake logs provenance) | Claude, after launch |
 | 7 | M3: "Open SpinFamily, no download needed" on the form success state and thank-you page (source-manifest update) | Claude |
@@ -134,4 +151,4 @@ Destinations to be validated against the current RICC build and its independent 
 ## 11. Release and rollback
 
 Release: after items 1–2 above, merge PR #28 into `landing`. Netlify applies the database migration before publishing (a failed migration blocks the publish). Then follow §7 step 3.
-Rollback: redeploy the previous production deploy in Netlify. The migration only adds new tables, so the previous code is unaffected. No existing table or file is changed. Workspace data stays in its own tables and isn't deleted by a rollback.
+Rollback: redeploy the previous production deploy in Netlify. The migrations only add tables and columns (the R2 migration also replaces the append-only trigger function with one that allows governed redaction), so the previous code is unaffected. No existing table or file is changed. Workspace data stays in its own tables and isn't deleted by a rollback.
