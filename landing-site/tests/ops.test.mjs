@@ -582,3 +582,17 @@ test('existing welcome email and the scheduled batch are untouched', () => {
   assert.match(toml, /for = "\/operations\/\*"/);
   assert.match(readFileSync(new URL('../netlify/functions/welcome-batch-20261125.mjs', import.meta.url), 'utf8'), /schedule:'0 14 25 11 \*'/);
 });
+
+test('preview founder login mapping: works only on previews, only for the configured Netlify login', async () => {
+  const w = world({ deployContext: 'deploy-preview', netlifyUser: { email: 'Founder.Personal@example.com' } });
+  assert.equal((await w.call('POST', 'auth/preview', {})).status, 403, 'not mapped without the setting');
+  w.deps.previewFounderLogin = 'founder.personal@example.com';
+  const r = await w.call('POST', 'auth/preview', {});
+  assert.equal(r.status, 200);
+  assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: r.sid })).body.member.email, FOUNDER_EMAIL);
+  w.deps.netlifyUser = { email: 'someone.else@example.com' };
+  assert.equal((await w.call('POST', 'auth/preview', {})).status, 403);
+  const prod = world({ deployContext: 'production', netlifyUser: { email: 'founder.personal@example.com' } });
+  prod.deps.previewFounderLogin = 'founder.personal@example.com';
+  assert.equal((await prod.call('POST', 'auth/preview', {})).status, 404, 'never on production');
+});
