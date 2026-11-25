@@ -94,7 +94,7 @@ Residual risks: preview database branches can hold production data copies (previ
 
 1. In Netlify → `spinfamily-landing` → Project configuration → Environment variables, add `OPS_FOUNDER_ENROLLMENT_CODE` (a long random phrase you keep somewhere safe), scoped to Functions, all deploy contexts.
 2. Confirm the SMTP variables are available to Functions in production (the welcome email already depends on them).
-3. After launch: sign in at `spinfamilyapp.com/operations/`, set up your authenticator with the setup code, add Lindsey at `lindseywhitaker@spinfamilyapp.com`, import earlier sign-ups and beta testers, and mark the backfill complete.
+3. After launch: sign in at `spinfamilyapp.com/operations/`, set up your authenticator with the setup code, add Lindsey at her SpinFamily work address (recorded in the restricted workforce packet, not in this public repo), import earlier sign-ups and beta testers, and mark the backfill complete.
 
 ## 8. Privacy and tracking (workspace)
 
