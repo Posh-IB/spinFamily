@@ -3,10 +3,30 @@
 import { sha256, newToken } from './security.mjs';
 import { json, fail, notFound, Invalid, newId, iso, text, oneOf, date, count, row, rows, asJson } from './util.mjs';
 import { getParticipant } from './records.mjs';
-import { submitForApproval } from './approvals.mjs';
+import { submitForApproval, supersedePending } from './approvals.mjs';
+import { inTx, barrier } from './db.mjs';
 
 const COHORT_STATUS = ['planned', 'active', 'completed', 'cancelled'];
-const ENROLL_STATUS = ['invited', 'consented', 'active', 'completed', 'withdrawn'];
+// Consent is never an enrollment status anyone can set: it is a research_consents record, given by
+// the parent on the survey page or recorded by the founder from written consent (R2-05).
+const ENROLL_STATUS = ['invited', 'completed', 'withdrawn'];
+export const SMALL_CELL = 5;
+
+// The participation notice parents see before answering. A new version needs founder approval again.
+export const RESEARCH_NOTICE = {
+  version: 'SF-RN-2026-11-v1',
+  text: [
+    'SpinFamily is asking pilot families a few questions to learn whether the app helps. Taking part is up to you.',
+    'Every question is optional. Please don\'t include your children\'s names or other details about them.',
+    'Your answers go to the SpinFamily founder. Other team members only ever see totals from 5 or more families, never your individual answers.',
+    'Your answers are used only to improve SpinFamily during the pilot. They are not sold or shared for advertising.',
+    'You can stop at any time. Use "Withdraw from research" on this page, or reply to any SpinFamily email, and we will stop asking and remove your answers on request.',
+  ],
+};
+async function noticeState(env) {
+  const v = (await env.sql`SELECT value FROM org_meta WHERE org_id = ${env.orgId} AND key = 'research_notice'`)[0]?.value || null;
+  return { current: RESEARCH_NOTICE, approved: v, approvedCurrent: !!v && v.version === RESEARCH_NOTICE.version };
+}
 const SESSION_KINDS = ['initial', 'follow_up', 'interview'];
 const QTYPES = ['scale', 'choice', 'yesno', 'text'];
 export const SURVEY_LINK_TTL_MS = 30 * 864e5;
@@ -61,7 +81,7 @@ function validateAnswers(questions, answers) {
   return out;
 }
 
-const toSurvey = r => { const s = row(r); return { id: s.id, title: s.title, version: s.version, status: s.status, intro: s.intro, questions: s.questions, approvedBy: s.approved_by, approvedAt: s.approved_at, createdAt: s.created_at }; };
+const toSurvey = r => { const s = row(r); return { id: s.id, title: s.title, version: s.version, revision: s.revision, status: s.status, intro: s.intro, questions: s.questions, approvedBy: s.approved_by, approvedAt: s.approved_at, createdAt: s.created_at }; };
 async function seedSurvey(env) {
   const seeded = await env.sql`INSERT INTO org_meta (org_id, key, value) VALUES (${env.orgId}, 'survey_seeded', ${asJson({ at: iso(env.now()) })}::jsonb) ON CONFLICT DO NOTHING RETURNING key`;
   if (!seeded[0]) return;
@@ -71,14 +91,26 @@ async function seedSurvey(env) {
 async function getSurvey(env, id) { const r = (await env.sql`SELECT * FROM survey_definitions WHERE id = ${id} AND org_id = ${env.orgId}`)[0]; return r ? toSurvey(r) : null; }
 const toCohort = r => { const c = row(r); return { id: c.id, name: c.name, partner: c.partner, description: c.description, protocol: c.protocol, plannedSize: c.planned_size, deadline: c.deadline, status: c.status, createdAt: c.created_at, enrolled: Number(c.enrolled || 0), sessionsDone: Number(c.sessions_done || 0) }; };
 
-function summarize(questions, responses, { includeText }) {
+// Coordinators see totals only, and never a group smaller than 5: whole results are withheld below
+// 5 responses, and any answer chosen by 1–4 people shows as "<5". If only one answer in a question
+// would be hidden, the next smallest is hidden too, so it can't be worked out by subtraction.
+export function summarize(questions, responses, { includeText, suppress = false }) {
   return questions.map(q => {
     const vals = responses.map(r => r.answers[q.id]).filter(v => v !== undefined);
-    const base = { id: q.id, text: q.text, type: q.type, answered: vals.length };
+    const base = { id: q.id, text: q.text, type: q.type, answered: suppress && vals.length < SMALL_CELL ? '<5' : vals.length };
     if (q.type === 'text') return { ...base, answers: includeText ? vals : [], note: includeText ? null : 'Written answers are visible to Dion only.' };
-    const counts = {};
+    let counts = {};
     for (const v of vals) counts[v] = (counts[v] || 0) + 1;
-    const avg = q.type === 'scale' && vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10 : null;
+    let avg = q.type === 'scale' && vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10 : null;
+    if (suppress) {
+      if (vals.length < SMALL_CELL) return { ...base, counts: {}, average: null, note: 'Fewer than 5 answers: hidden.' };
+      const small = Object.keys(counts).filter(k => counts[k] < SMALL_CELL);
+      if (small.length === 1) {
+        const next = Object.keys(counts).filter(k => !small.includes(k)).sort((a, b) => counts[a] - counts[b])[0];
+        if (next) small.push(next);
+      }
+      counts = Object.fromEntries(Object.entries(counts).map(([k, n]) => [k, small.includes(k) ? '<5' : n]));
+    }
     return { ...base, counts, average: avg };
   });
 }
@@ -98,7 +130,35 @@ export async function researchRoutes(parts, method, body, env) {
     const stats = rows(await env.sql`SELECT survey_id, count(*)::int AS responses FROM survey_responses WHERE org_id = ${env.orgId} GROUP BY survey_id`);
     const invites = rows(await env.sql`SELECT survey_id, count(*)::int AS invites FROM survey_invites WHERE org_id = ${env.orgId} GROUP BY survey_id`);
     for (const s of surveys) { s.responses = stats.find(x => x.survey_id === s.id)?.responses || 0; s.invites = invites.find(x => x.survey_id === s.id)?.invites || 0; }
-    return json({ cohorts, surveys, cohortStatuses: COHORT_STATUS, sessionKinds: SESSION_KINDS });
+    return json({ cohorts, surveys, cohortStatuses: COHORT_STATUS, sessionKinds: SESSION_KINDS, enrollStatuses: ENROLL_STATUS, notice: await noticeState(env), researchEnabled: !!env.features?.has('research') });
+  }
+
+  // ----- Participation notice (founder approves each version) -----
+  if (route === 'notice' && method === 'POST' && parts[1] === 'approve') {
+    env.need('research.notice.approve');
+    if (body.version !== RESEARCH_NOTICE.version) throw new Invalid('That is not the current notice. Reload and review it again.');
+    await inTx(env, async t => {
+      await t.sql`INSERT INTO org_meta (org_id, key, value) VALUES (${t.orgId}, 'research_notice', ${asJson({ version: RESEARCH_NOTICE.version, digest: sha256(JSON.stringify(RESEARCH_NOTICE.text)), approvedAt: iso(t.now()), approvedBy: me.id })}::jsonb)
+        ON CONFLICT (org_id, key) DO UPDATE SET value = excluded.value`;
+      await t.audit('research.notice_approved', null, { version: RESEARCH_NOTICE.version });
+    });
+    return json({ notice: await noticeState(env) });
+  }
+
+  // ----- Consent the founder holds in writing -----
+  if (route === 'consents' && method === 'POST') {
+    env.need('research.consent.record');
+    const p = await getParticipant(env, text(body.participantId, 'participant', 40, { required: true }));
+    if (!p) throw new Invalid('Unknown participant');
+    if (p.withdrawnAt) throw new Invalid('This person withdrew');
+    const evidence = text(body.evidence, 'Where the written consent is kept', 300, { required: true });
+    const noticeVersion = oneOf(body.noticeVersion, 'notice version', [RESEARCH_NOTICE.version]);
+    await inTx(env, async t => {
+      await t.sql`INSERT INTO research_consents (id, org_id, participant_id, purpose, notice_version, method, evidence, given_at, recorded_by) VALUES (${newId('rcn')}, ${t.orgId}, ${p.id}, 'pilot_research', ${noticeVersion}, 'founder_recorded_written', ${evidence}, ${iso(t.now())}, ${me.id})`;
+      await t.sql`INSERT INTO participant_history (org_id, participant_id, at, actor, changes) VALUES (${t.orgId}, ${p.id}, ${iso(t.now())}, ${me.id}, ${asJson([{ field: 'research consent', to: `recorded from written consent (${noticeVersion})` }])}::jsonb)`;
+      await t.audit('research.consent_recorded', p.id);
+    });
+    return json({ ok: true }, 201);
   }
 
   // ----- Cohorts -----
@@ -115,9 +175,11 @@ export async function researchRoutes(parts, method, body, env) {
     const c = parts[1] && (await env.sql`SELECT id, status FROM research_cohorts WHERE id = ${parts[1]} AND org_id = ${env.orgId}`)[0];
     if (!c) return notFound();
     if (method === 'GET' && !parts[2]) {
-      const enrolled = await env.sql`SELECT e.participant_id, e.status, e.consent_at, p.first_name, p.assigned_to FROM research_enrollments e JOIN participants p ON p.id = e.participant_id WHERE e.cohort_id = ${c.id} ORDER BY e.created_at`;
+      const enrolled = await env.sql`SELECT e.participant_id, e.status, p.first_name, p.assigned_to,
+        (SELECT min(given_at) FROM research_consents rc WHERE rc.participant_id = e.participant_id AND rc.withdrawn_at IS NULL) AS consent_at
+        FROM research_enrollments e JOIN participants p ON p.id = e.participant_id WHERE e.cohort_id = ${c.id} ORDER BY e.created_at LIMIT 500`;
       const visible = env.has('participants.view.all') ? enrolled : enrolled.filter(e => e.assigned_to === me.id);
-      const sessions = rows(await env.sql`SELECT id, participant_id, kind, scheduled_for::text AS scheduled_for, completed_at, observations, created_by FROM research_sessions WHERE cohort_id = ${c.id} ORDER BY scheduled_for NULLS LAST, created_at`);
+      const sessions = rows(await env.sql`SELECT id, participant_id, kind, scheduled_for::text AS scheduled_for, completed_at, observations, created_by FROM research_sessions WHERE cohort_id = ${c.id} ORDER BY scheduled_for NULLS LAST, created_at LIMIT 1000`);
       const ids = new Set(visible.map(e => e.participant_id));
       return json({ enrollments: rows(visible).map(e => ({ participantId: e.participant_id, firstName: e.first_name, status: e.status, consentAt: e.consent_at })), hiddenCount: enrolled.length - visible.length, sessions: sessions.filter(s => ids.has(s.participant_id)) });
     }
@@ -131,10 +193,19 @@ export async function researchRoutes(parts, method, body, env) {
       const p = await getParticipant(env, text(body.participantId, 'participant', 40, { required: true }));
       if (!p) throw new Invalid('Unknown participant');
       if (me.role !== 'founder' && p.assignedTo !== me.id) throw new Invalid('You can only add participants assigned to you');
+      if (p.withdrawnAt) throw new Invalid('This person withdrew');
+      if (p.isTest !== false) throw new Invalid('Review this record (not a test) before adding it to research');
       const status = oneOf(body.status, 'status', ENROLL_STATUS, 'invited');
-      await env.sql`INSERT INTO research_enrollments (org_id, cohort_id, participant_id, status, consent_at, created_at) VALUES (${env.orgId}, ${c.id}, ${p.id}, ${status}, ${status === 'consented' || status === 'active' ? iso(env.now()) : null}, ${iso(env.now())})
-        ON CONFLICT (cohort_id, participant_id) DO UPDATE SET status = excluded.status, consent_at = coalesce(research_enrollments.consent_at, excluded.consent_at)`;
-      await env.audit('research.enrolled', c.id, { participant: p.id, status });
+      if (status === 'completed') env.need('research.manage');
+      await inTx(env, async t => {
+        // A withdrawal stays a withdrawal: re-adding someone who withdrew is refused.
+        const prev = (await t.sql`SELECT status FROM research_enrollments WHERE cohort_id = ${c.id} AND participant_id = ${p.id} FOR UPDATE`)[0];
+        if (prev?.status === 'withdrawn' && status !== 'withdrawn') throw new Invalid('They withdrew from this research. They can only rejoin by telling Dion directly.');
+        await t.sql`INSERT INTO research_enrollments (org_id, cohort_id, participant_id, status, consent_at, created_at) VALUES (${t.orgId}, ${c.id}, ${p.id}, ${status}, NULL, ${iso(t.now())})
+          ON CONFLICT (cohort_id, participant_id) DO UPDATE SET status = excluded.status`;
+        if (status === 'withdrawn') await t.sql`UPDATE survey_invites SET revoked_at = ${t.now()} WHERE org_id = ${t.orgId} AND participant_id = ${p.id} AND cohort_id = ${c.id} AND used_at IS NULL AND revoked_at IS NULL`;
+        await t.audit('research.enrolled', c.id, { participant: p.id, status });
+      });
       return json({ ok: true }, 201);
     }
   }
@@ -162,8 +233,13 @@ export async function researchRoutes(parts, method, body, env) {
       const questions = body.questions !== undefined ? validateQuestions(body.questions) : s.questions;
       const intro = body.intro !== undefined ? text(body.intro, 'Introduction', 1000) : s.intro;
       if (s.status === 'draft') {
-        await env.sql`UPDATE survey_definitions SET questions = ${asJson(questions)}::jsonb, intro = ${intro} WHERE id = ${s.id} AND status = 'draft'`;
-        await env.audit('survey.draft_edited', s.id);
+        // Editing a draft starts a new revision and replaces any approval request for the old one (R2-04).
+        await inTx(env, async t => {
+          const r = await t.sql`UPDATE survey_definitions SET questions = ${asJson(questions)}::jsonb, intro = ${intro}, revision = revision + 1 WHERE id = ${s.id} AND status = 'draft' AND revision = ${Number.isInteger(body.revision) ? body.revision : s.revision} RETURNING id`;
+          if (!r[0]) { const e = new Error('conflict'); e.conflict = true; throw e; }
+          await supersedePending(t, 'survey', s.id);
+          await t.audit('survey.draft_edited', s.id);
+        });
         return json({ survey: await getSurvey(env, s.id) });
       }
       // Approved versions are never edited: changes become a new draft version. Answers keep their version.
@@ -176,31 +252,50 @@ export async function researchRoutes(parts, method, body, env) {
     if (method === 'POST' && parts[2] === 'submit') {
       env.need('surveys.draft');
       if (s.status !== 'draft') throw new Invalid('Only drafts can be sent for approval');
-      await submitForApproval(env, { itemType: 'survey', itemId: s.id, title: `${s.title} v${s.version}`, summary: `${s.questions.length} questions. Needs approval before any parent sees it.` });
+      await submitForApproval(env, { itemType: 'survey', itemId: s.id, title: `${s.title} v${s.version}`, summary: `${s.questions.length} questions (revision ${s.revision}). Needs approval before any parent sees it.` });
       return json({ ok: true });
     }
     if (method === 'GET' && parts[2] === 'results') {
       env.need('responses.view.aggregate');
       const full = env.has('responses.view.full');
-      const resp = rows(await env.sql`SELECT r.id, r.answers, r.submitted_at, r.participant_id, p.first_name FROM survey_responses r JOIN participants p ON p.id = r.participant_id WHERE r.survey_id = ${s.id} ORDER BY r.submitted_at`);
-      return json({ survey: s, responses: resp.length, summary: summarize(s.questions, resp, { includeText: full }), individual: full ? resp.map(r => ({ firstName: r.first_name, submittedAt: r.submitted_at, answers: r.answers })) : null });
+      // Only answers from people who have not withdrawn and still consent are reported.
+      const resp = rows(await env.sql`SELECT r.id, r.answers, r.submitted_at, r.participant_id, p.first_name FROM survey_responses r JOIN participants p ON p.id = r.participant_id
+        WHERE r.survey_id = ${s.id} AND p.withdrawn_at IS NULL AND EXISTS (SELECT 1 FROM research_consents c WHERE c.participant_id = r.participant_id AND c.withdrawn_at IS NULL) ORDER BY r.submitted_at LIMIT 5000`);
+      return json({ survey: s, responses: !full && resp.length < SMALL_CELL ? '<5' : resp.length, summary: summarize(s.questions, resp, { includeText: full, suppress: !full }), individual: full ? resp.map(r => ({ firstName: r.first_name, submittedAt: r.submitted_at, answers: r.answers })) : null });
     }
   }
 
-  // ----- Survey links (one per participant, single use, 30 days) -----
+  // ----- Survey links (one active per participant and questionnaire, single use, 30 days) -----
   if (route === 'invites' && method === 'POST') {
     env.need('research.invite');
-    const s = await getSurvey(env, text(body.surveyId, 'survey', 40, { required: true }));
-    if (!s || s.status !== 'approved') throw new Invalid('Only an approved questionnaire can be sent. Send the draft to Dion for approval first.');
-    const p = await getParticipant(env, text(body.participantId, 'participant', 40, { required: true }));
-    if (!p || (me.role !== 'founder' && p.assignedTo !== me.id)) throw new Invalid('Unknown participant');
-    if (p.isTest === true) throw new Invalid('That record is marked as a test');
+    if (!env.features?.has('research')) throw new Invalid('Survey links are switched off until research is approved for real families (OPS_FEATURES).');
+    const notice = await noticeState(env);
+    if (!notice.approvedCurrent) throw new Invalid('Dion needs to approve the participation notice first (Research & testing).');
+    const surveyId = text(body.surveyId, 'survey', 40, { required: true });
+    const participantId = text(body.participantId, 'participant', 40, { required: true });
     const cohortId = body.cohortId ? text(body.cohortId, 'cohort', 40) : null;
-    if (cohortId && !(await env.sql`SELECT 1 FROM research_enrollments WHERE cohort_id = ${cohortId} AND participant_id = ${p.id}`)[0]) throw new Invalid('They are not in that cohort');
-    if ((await env.sql`SELECT 1 FROM survey_responses WHERE survey_id = ${s.id} AND participant_id = ${p.id}`)[0]) throw new Invalid('They already answered this questionnaire');
     const token = newToken();
-    await env.sql`INSERT INTO survey_invites (token_hash, org_id, survey_id, participant_id, cohort_id, created_by, created_at, expires_at) VALUES (${sha256(token)}, ${env.orgId}, ${s.id}, ${p.id}, ${cohortId}, ${me.id}, ${iso(env.now())}, ${env.now() + SURVEY_LINK_TTL_MS})`;
-    await env.audit('survey.link_created', s.id, { participant: p.id });
+    await inTx(env, async t => {
+      // Lock the person, then check every eligibility rule against what is true right now.
+      const p = (await t.sql`SELECT id, assigned_to, is_test, withdrawn_at, communication FROM participants WHERE id = ${participantId} AND org_id = ${t.orgId} FOR UPDATE`)[0];
+      if (!p || (me.role !== 'founder' && p.assigned_to !== me.id)) throw new Invalid('Unknown participant');
+      if (p.is_test !== false) throw new Invalid(p.is_test ? 'That record is marked as a test' : 'Review this record (not a test) first');
+      if (p.withdrawn_at) throw new Invalid('This person withdrew');
+      if (p.communication === 'opted_out') throw new Invalid('This person opted out of emails');
+      const s = (await t.sql`SELECT id, title, status FROM survey_definitions WHERE id = ${surveyId} AND org_id = ${t.orgId} FOR SHARE`)[0];
+      if (!s || s.status !== 'approved') throw new Invalid('Only an approved questionnaire can be sent. Send the draft to Dion for approval first.');
+      if (cohortId) {
+        const e = (await t.sql`SELECT status FROM research_enrollments WHERE cohort_id = ${cohortId} AND participant_id = ${p.id} AND org_id = ${t.orgId}`)[0];
+        if (!e) throw new Invalid('They are not in that cohort');
+        if (e.status === 'withdrawn') throw new Invalid('They withdrew from that cohort');
+      }
+      if ((await t.sql`SELECT 1 FROM research_withdrawals WHERE participant_id = ${p.id} AND org_id = ${t.orgId}`)[0]) throw new Invalid('They withdrew from research');
+      if ((await t.sql`SELECT 1 FROM survey_responses r JOIN survey_definitions d ON d.id = r.survey_id WHERE d.title = ${s.title} AND r.participant_id = ${p.id} AND r.org_id = ${t.orgId}`)[0]) throw new Invalid('They already answered this questionnaire');
+      // A new link replaces any earlier unused one for this questionnaire.
+      await t.sql`UPDATE survey_invites SET revoked_at = ${t.now()} WHERE org_id = ${t.orgId} AND participant_id = ${p.id} AND used_at IS NULL AND revoked_at IS NULL AND survey_id IN (SELECT id FROM survey_definitions WHERE title = ${s.title} AND org_id = ${t.orgId})`;
+      await t.sql`INSERT INTO survey_invites (token_hash, org_id, survey_id, participant_id, cohort_id, created_by, created_at, expires_at, notice_version) VALUES (${sha256(token)}, ${t.orgId}, ${s.id}, ${p.id}, ${cohortId}, ${me.id}, ${iso(t.now())}, ${t.now() + SURVEY_LINK_TTL_MS}, ${RESEARCH_NOTICE.version})`;
+      await t.audit('survey.link_created', s.id, { participant: p.id });
+    });
     // Shown once to the person who created it; only a hash is stored.
     return json({ link: `${env.origin}/pilot/survey/#t=${token}`, expiresInDays: 30 }, 201);
   }
@@ -208,23 +303,76 @@ export async function researchRoutes(parts, method, body, env) {
 }
 
 // ---------- Public endpoints used by the parent's survey page (token only; no sign-in) ----------
+// Every check is repeated at submit time inside one transaction: link unused, not revoked, not
+// expired; questionnaire still approved; notice still the approved version; person not withdrawn;
+// consent on file or given now. The response insert and the link claim commit together.
+async function readInvite(sql, orgId, hash, lock) {
+  const q = lock
+    ? sql`SELECT i.token_hash, i.survey_id, i.participant_id, i.cohort_id, i.expires_at, i.used_at, i.revoked_at, i.notice_version, s.status, s.title, s.intro, s.questions, s.version, p.withdrawn_at, p.is_test
+        FROM survey_invites i JOIN survey_definitions s ON s.id = i.survey_id JOIN participants p ON p.id = i.participant_id WHERE i.token_hash = ${hash} AND i.org_id = ${orgId} FOR UPDATE OF i, p`
+    : sql`SELECT i.token_hash, i.survey_id, i.participant_id, i.cohort_id, i.expires_at, i.used_at, i.revoked_at, i.notice_version, s.status, s.title, s.intro, s.questions, s.version, p.withdrawn_at, p.is_test
+        FROM survey_invites i JOIN survey_definitions s ON s.id = i.survey_id JOIN participants p ON p.id = i.participant_id WHERE i.token_hash = ${hash} AND i.org_id = ${orgId}`;
+  return (await q)[0] || null;
+}
+function inviteLive(inv, now, notice) {
+  return !!inv && inv.used_at === null && inv.revoked_at === null && now <= Number(inv.expires_at) && inv.status === 'approved' && !inv.withdrawn_at && inv.is_test === false
+    && notice.approvedCurrent && inv.notice_version === notice.current.version;
+}
+const activeConsent = async (sql, orgId, pid) => (await sql`SELECT id FROM research_consents WHERE org_id = ${orgId} AND participant_id = ${pid} AND purpose = 'pilot_research' AND withdrawn_at IS NULL`)[0]?.id || null;
+
 export async function publicSurveyRoutes(parts, method, body, deps) {
   if (parts[0] !== 'survey' || method !== 'POST') return null;
   const token = typeof body.token === 'string' && /^[\w-]{20,100}$/.test(body.token) ? body.token : '';
+  const noStore = { headers: { 'cache-control': 'no-store', 'x-robots-tag': 'noindex' } };
   const gone = () => fail(400, 'link_invalid', 'This survey link has expired or was already used. Thank you — if you think this is a mistake, reply to the email you got from SpinFamily.');
   if (!token) return gone();
-  const inv = (await deps.sql`SELECT i.token_hash, i.survey_id, i.participant_id, i.cohort_id, i.expires_at, i.used_at, s.status, s.title, s.intro, s.questions, s.version
-    FROM survey_invites i JOIN survey_definitions s ON s.id = i.survey_id WHERE i.token_hash = ${sha256(token)} AND i.org_id = ${deps.orgId}`)[0];
-  if (!inv || inv.used_at !== null || deps.now() > Number(inv.expires_at) || inv.status !== 'approved') return gone();
-  if (parts[1] === 'load') return Response.json({ title: inv.title, intro: inv.intro, questions: inv.questions }, { headers: { 'cache-control': 'no-store', 'x-robots-tag': 'noindex' } });
+  const hash = sha256(token);
+  const notice = await noticeState(deps);
+
+  if (parts[1] === 'load') {
+    const inv = await readInvite(deps.sql, deps.orgId, hash, false);
+    if (!inviteLive(inv, deps.now(), notice)) return gone();
+    return Response.json({ title: inv.title, intro: inv.intro, questions: inv.questions, notice: notice.current, consentOnFile: !!(await activeConsent(deps.sql, deps.orgId, inv.participant_id)) }, noStore);
+  }
   if (parts[1] === 'submit') {
-    const answers = validateAnswers(inv.questions, body.answers);
-    const claimed = await deps.sql`UPDATE survey_invites SET used_at = ${deps.now()} WHERE token_hash = ${inv.token_hash} AND used_at IS NULL RETURNING token_hash`;
-    if (!claimed[0]) return gone();
-    const at = iso(deps.now());
-    await deps.sql`INSERT INTO survey_responses (id, org_id, survey_id, survey_version, participant_id, cohort_id, answers, submitted_at) VALUES (${newId('sr')}, ${deps.orgId}, ${inv.survey_id}, ${inv.version}, ${inv.participant_id}, ${inv.cohort_id}, ${asJson(answers)}::jsonb, ${at})`;
-    await deps.sql`INSERT INTO participant_history (org_id, participant_id, at, actor, changes) VALUES (${deps.orgId}, ${inv.participant_id}, ${at}, 'survey', ${asJson([{ field: 'survey', to: `submitted ${inv.title} v${inv.version}` }])}::jsonb)`;
-    return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store' } });
+    const r = await inTx(deps, async t => {
+      const inv = await readInvite(t.sql, t.orgId, hash, true);
+      await barrier(t, 'survey.submit.locked');
+      if (!inviteLive(inv, t.now(), notice)) return { gone: true };
+      const answers = validateAnswers(inv.questions, body.answers);
+      if ((await t.sql`SELECT 1 FROM survey_responses WHERE org_id = ${t.orgId} AND participant_id = ${inv.participant_id} AND survey_id = ${inv.survey_id}`)[0]) return { gone: true };
+      let consentId = await activeConsent(t.sql, t.orgId, inv.participant_id);
+      if (!consentId) {
+        if (body.consent !== true || body.noticeVersion !== notice.current.version) return { consentRequired: true };
+        consentId = newId('rcn');
+        await t.sql`INSERT INTO research_consents (id, org_id, participant_id, purpose, notice_version, method, evidence, given_at, recorded_by) VALUES (${consentId}, ${t.orgId}, ${inv.participant_id}, 'pilot_research', ${notice.current.version}, 'participant_survey_page', 'Ticked the consent box on the survey page', ${iso(t.now())}, 'participant')`;
+      }
+      const at = iso(t.now());
+      await t.sql`UPDATE survey_invites SET used_at = ${t.now()} WHERE token_hash = ${hash}`;
+      await barrier(t, 'survey.submit.before_insert');
+      await t.sql`INSERT INTO survey_responses (id, org_id, survey_id, survey_version, participant_id, cohort_id, answers, submitted_at, consent_id) VALUES (${newId('sr')}, ${t.orgId}, ${inv.survey_id}, ${inv.version}, ${inv.participant_id}, ${inv.cohort_id}, ${asJson(answers)}::jsonb, ${at}, ${consentId})`;
+      await t.sql`INSERT INTO participant_history (org_id, participant_id, at, actor, changes) VALUES (${t.orgId}, ${inv.participant_id}, ${at}, 'survey', ${asJson([{ field: 'survey', to: `submitted ${inv.title} v${inv.version}` }])}::jsonb)`;
+      return { ok: true };
+    });
+    if (r.consentRequired) return fail(400, 'consent_required', 'Please read the notice and tick the box to take part.');
+    if (r.gone) return gone();
+    return Response.json({ ok: true }, noStore);
+  }
+  if (parts[1] === 'withdraw') {
+    // Works from any link they were sent (even used), until it expires.
+    const r = await inTx(deps, async t => {
+      const inv = await readInvite(t.sql, t.orgId, hash, true);
+      if (!inv || t.now() > Number(inv.expires_at)) return null;
+      await t.sql`UPDATE research_consents SET withdrawn_at = ${iso(t.now())}, withdrawal_method = 'participant_survey_page', withdrawal_by = 'participant' WHERE org_id = ${t.orgId} AND participant_id = ${inv.participant_id} AND withdrawn_at IS NULL`;
+      await t.sql`UPDATE research_enrollments SET status = 'withdrawn' WHERE org_id = ${t.orgId} AND participant_id = ${inv.participant_id}`;
+      await t.sql`UPDATE survey_invites SET revoked_at = ${t.now()} WHERE org_id = ${t.orgId} AND participant_id = ${inv.participant_id} AND used_at IS NULL AND revoked_at IS NULL`;
+      await t.sql`INSERT INTO research_withdrawals (id, org_id, participant_id, method, recorded_by, at) VALUES (${newId('rw')}, ${t.orgId}, ${inv.participant_id}, 'participant_survey_page', 'participant', ${iso(t.now())})`;
+      await t.sql`INSERT INTO participant_history (org_id, participant_id, at, actor, changes) VALUES (${t.orgId}, ${inv.participant_id}, ${iso(t.now())}, 'participant', ${asJson([{ field: 'research', to: 'withdrew on the survey page' }])}::jsonb)`;
+      await t.sql`INSERT INTO audit_events (org_id, at, actor, action, target, extra) VALUES (${t.orgId}, ${iso(t.now())}, 'participant', 'research.withdrawn', ${inv.participant_id}, '{}'::jsonb)`;
+      return true;
+    });
+    if (!r) return gone();
+    return Response.json({ ok: true, message: 'You have withdrawn. We won\'t ask you any more research questions. To have your earlier answers removed, reply to any SpinFamily email.' }, noStore);
   }
   return null;
 }

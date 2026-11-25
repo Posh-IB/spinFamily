@@ -43,18 +43,27 @@ async function start() {
     if (q.section && q.section !== section) { section = q.section; items.push(h('h2', {}, section)); }
     items.push(h('fieldset', { class: 'card' }, h('legend', {}, q.text), field(q)));
   }
+  // The participation notice comes first. Agreeing is a separate, unticked box (R2-05).
+  const notice = h('div', { class: 'card' }, h('h2', {}, 'Before you start'), h('ul', {}, s.notice.text.map(t => h('li', {}, t))), h('p', { class: 'muted' }, `Notice ${s.notice.version}`));
+  const consent = s.consentOnFile ? null : h('label', { class: 'row' }, h('input', { type: 'checkbox', name: 'consent', required: true }), 'I have read this and agree to take part.');
   const form = h('form', { class: 'stack', onsubmit: async e => {
     e.preventDefault();
-    const btn = form.querySelector('button'); btn.disabled = true;
+    const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
     const answers = {};
     for (const q of s.questions) {
       if (q.type === 'text') { const v = form.elements[q.id].value.trim(); if (v) answers[q.id] = v; }
       else { const c = form.querySelector(`input[name="${q.id}"]:checked`); if (c) answers[q.id] = q.type === 'scale' ? Number(c.value) : c.value; }
     }
-    try { await post('submit', { answers }); show(h('h1', {}, 'Thank you!'), h('p', {}, 'Your answers were sent to the SpinFamily team. They help us make family time easier to plan.')); }
+    const agreed = s.consentOnFile || form.querySelector('input[name=consent]')?.checked === true;
+    try { await post('submit', { answers, consent: agreed, noticeVersion: s.notice.version }); show(h('h1', {}, 'Thank you!'), h('p', {}, 'Your answers were sent to the SpinFamily team. They help us make family time easier to plan.')); }
     catch (err) { btn.disabled = false; form.prepend(h('div', { class: 'notice err', role: 'alert' }, err.message)); }
-  } }, ...items, h('button', { class: 'btn', type: 'submit' }, 'Send my answers'));
-  show(h('h1', {}, s.title), h('p', { class: 'sub' }, s.intro), form);
+  } }, ...items, consent, h('button', { class: 'btn', type: 'submit' }, 'Send my answers'));
+  const withdraw = h('button', { class: 'btn ghost small', type: 'button', onclick: async () => {
+    if (!confirm('Withdraw from SpinFamily research? We will stop asking you questions.')) return;
+    try { const r = await post('withdraw', {}); show(h('h1', {}, 'You have withdrawn'), h('p', {}, r.message)); }
+    catch (err) { root.prepend(h('div', { class: 'notice err', role: 'alert' }, err.message)); }
+  } }, 'Withdraw from research');
+  show(h('h1', {}, s.title), h('p', { class: 'sub' }, s.intro), notice, form, h('details', {}, h('summary', {}, 'Don\'t want to take part?'), h('p', { class: 'muted' }, 'You can withdraw at any time. This stops all SpinFamily research questions.'), withdraw));
 }
 start();
 })();

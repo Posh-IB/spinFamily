@@ -1,67 +1,20 @@
-// SF-PILOT-OPS-001 workspace tests against a real Postgres (Netlify Database local engine). Synthetic records only.
+// SF-PILOT-OPS-001 workspace tests against a real PostgreSQL server with several connections
+// (tests/helpers/harness.mjs). Synthetic records only. Race tests with barriers: ops-r2.test.mjs.
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { NetlifyDB } from '@netlify/database-dev';
-import { getDatabase } from '@netlify/database';
-import { handle, FOUNDER_EMAIL } from '../lib/ops/core.mjs';
-import { ingestPilotSubmission } from '../lib/ops/records.mjs';
-import { memoryFiles } from '../lib/ops/files.mjs';
-import { runtimeFacts } from '../lib/ops/runtime.mjs';
+import { FOUNDER_EMAIL } from '../lib/ops/core.mjs';
+import { ingestPilotSubmission, PILOT_CONSENT_TEXT } from '../lib/ops/records.mjs';
+import { runtimeFacts, secretsFor } from '../lib/ops/runtime.mjs';
 import { SITE_ID } from '../lib/pilot-welcome.mjs';
-import { totpAt, verifyTotp, base32Decode, base32Encode, SESSION_COOKIE } from '../lib/ops/security.mjs';
+import { totpAt, verifyTotp, base32Decode, base32Encode } from '../lib/ops/security.mjs';
+import { startDatabase, world as makeWorld, team, COORD, BOOTSTRAP, RECOVERY, FORM, reviewedParticipant } from './helpers/harness.mjs';
 
-const ORIGIN = 'https://spinfamilyapp.com';
-const COORD = 'coordinator@example.com';
-const ENROLL = 'test-enrollment-code';
-let ndb, db;
-
-before(async () => {
-  ndb = new NetlifyDB();
-  db = getDatabase({ connectionString: await ndb.start() });
-  await ndb.applyMigrations(new URL('../netlify/database/migrations', import.meta.url).pathname);
-});
-after(async () => { await db.pool?.end?.(); await ndb.stop(); });
-beforeEach(async () => {
-  const tables = (await db.sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('orgs') AND tablename NOT LIKE '%migration%'`).map(r => r.tablename);
-  await db.sql.unsafe(`TRUNCATE ${tables.map(t => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
-});
-
-function world({ deployContext = 'production', netlifyUser = null, enrollmentCode = ENROLL } = {}) {
-  const mail = [];
-  let clock = Date.parse('2026-11-24T15:00:00Z');
-  const deps = { sql: db.sql, files: memoryFiles(), orgId: 'spinfamily', now: () => clock, origin: ORIGIN, deployContext, netlifyUser, mailbox: 'hello@spinfamilyapp.com', founderEnrollmentCode: enrollmentCode, sendMail: async m => { mail.push(m); return { accepted: [m.to.address] }; } };
-  const call = async (method, path, body, { cookie, headers = {} } = {}) => {
-    const h = { ...headers };
-    if (cookie) h.cookie = `${SESSION_COOKIE}=${cookie}`;
-    if (method !== 'GET') { h['content-type'] ??= 'application/json'; h['x-sf-ops'] ??= '1'; h.origin ??= ORIGIN; }
-    const res = await handle(new Request(`${ORIGIN}/operations/api/${path}`, { method, headers: h, body: method === 'GET' ? undefined : JSON.stringify(body ?? {}) }), deps);
-    const sid = res.headers.get('set-cookie')?.match(new RegExp(`${SESSION_COOKIE}=([^;]*)`))?.[1];
-    const ct = res.headers.get('content-type') || '';
-    return { status: res.status, body: ct.includes('json') ? await res.json() : null, sid, headers: res.headers, res };
-  };
-  const tokenFrom = m => m.text.match(/#signin=([\w-]+)/)[1];
-  const requestLink = async email => { const before = mail.length; await call('POST', 'auth/request', { email }); assert.equal(mail.length, before + 1, `link sent to ${email}`); return tokenFrom(mail.at(-1)); };
-  const signIn = async email => { const r = await call('POST', 'auth/verify', { token: await requestLink(email) }); assert.equal(r.status, 200); return r.sid; };
-  const code = secret => totpAt(secret, Math.floor(clock / 30000));
-  const enroll = async (sid, founder) => {
-    const s = await call('POST', 'auth/authenticator/setup', founder ? { enrollmentCode: ENROLL } : {}, { cookie: sid });
-    assert.equal(s.status, 200, JSON.stringify(s.body));
-    assert.equal((await call('POST', 'auth/authenticator/confirm', { code: code(s.body.secret) }, { cookie: sid })).status, 200);
-    return s.body.secret;
-  };
-  const ready = async (email, founder = email === FOUNDER_EMAIL) => { const sid = await signIn(email); const secret = await enroll(sid, founder); return { sid, secret }; };
-  const tick = ms => { clock += ms; };
-  return { mail, deps, call, requestLink, signIn, enroll, ready, code, tick, get clock() { return clock; } };
-}
-async function team(w) {
-  const f = await w.ready(FOUNDER_EMAIL);
-  const inv = await w.call('POST', 'team/invite', { email: COORD, name: 'Test Coordinator', role: 'coordinator' }, { cookie: f.sid });
-  assert.equal(inv.status, 201);
-  w.tick(31000);
-  const c = await w.ready(COORD);
-  return { sid: f.sid, secret: f.secret, csid: c.sid, csecret: c.secret, coordId: inv.body.member.id };
-}
+let pgdb, db;
+before(async () => { pgdb = await startDatabase(); db = pgdb.db; });
+after(async () => { await pgdb?.stop(); });
+beforeEach(async () => { await pgdb.reset(); });
+const world = (opts) => makeWorld(db, opts);
 
 // ---------- TOTP ----------
 test('TOTP matches RFC 6238 SHA-1 test vector and blocks reuse', () => {
@@ -113,17 +66,22 @@ test('IR-01: parallel link use and parallel link requests are atomic', async () 
   assert.equal(w.mail.length - before, 3, 'throttle holds under parallel requests');
 });
 
-test('IR-07: founder authenticator setup needs the Netlify setup code; without it, setup is locked', async () => {
+test('IR-07/R2-01: founder setup needs this deploy\'s one-time bootstrap code; not the recovery code; locked without it', async () => {
   const w = world();
   const sid = await w.signIn(FOUNDER_EMAIL);
   assert.equal((await w.call('POST', 'auth/authenticator/setup', {}, { cookie: sid })).status, 403);
   assert.equal((await w.call('POST', 'auth/authenticator/setup', { enrollmentCode: 'wrong' }, { cookie: sid })).status, 403);
-  assert.equal((await w.call('POST', 'auth/authenticator/setup', { enrollmentCode: ENROLL }, { cookie: sid })).status, 200);
-  const locked = world({ enrollmentCode: null });
-  await db.sql`TRUNCATE members, memberships, sessions, login_links, audit_events RESTART IDENTITY CASCADE`;
+  assert.equal((await w.call('POST', 'auth/authenticator/setup', { enrollmentCode: RECOVERY }, { cookie: sid })).status, 403, 'the recovery code is not a setup code');
+  assert.equal((await w.call('POST', 'auth/authenticator/setup', { enrollmentCode: BOOTSTRAP }, { cookie: sid })).status, 200);
+  await pgdb.reset();
+  const locked = world({ secrets: { bootstrap: null, recovery: null } });
   const sid2 = await locked.signIn(FOUNDER_EMAIL);
   const r = await locked.call('POST', 'auth/authenticator/setup', { enrollmentCode: 'anything' }, { cookie: sid2 });
-  assert.equal(r.status, 403); assert.match(r.body.error.message, /OPS_FOUNDER_ENROLLMENT_CODE/);
+  assert.equal(r.status, 403); assert.match(r.body.error.message, /locked until the setup code is set/);
+  await pgdb.reset();
+  const same = world({ secrets: secretsFor({ isProduction: true }, k => ({ OPS_FOUNDER_BOOTSTRAP_CODE: 'x', OPS_FOUNDER_RECOVERY_CODE: 'x' })[k]) });
+  const sid3 = await same.signIn(FOUNDER_EMAIL);
+  assert.equal((await same.call('POST', 'auth/authenticator/setup', { enrollmentCode: 'x' }, { cookie: sid3 })).status, 403, 'identical setup and recovery codes are refused');
 });
 
 test('IR-07: everyone needs an authenticator before seeing any data, coordinators included', async () => {
@@ -158,15 +116,26 @@ test('IR-01: five wrong codes end the session even when sent in parallel', async
   assert.equal((await w.call('POST', 'auth/mfa', { code: w.code(secret) }, { cookie: sid })).status, 401);
 });
 
-test('founder can recover a lost authenticator with a new email link plus the setup code', async () => {
+test('R2-01: founder recovery needs a fresh link plus the one-time recovery code; ends other sessions and links; each code works once', async () => {
   const w = world();
-  await w.ready(FOUNDER_EMAIL);
+  const { sid: old } = await w.ready(FOUNDER_EMAIL);
   w.tick(60000);
+  const outstanding = await w.requestLink(FOUNDER_EMAIL);
   const sid = await w.signIn(FOUNDER_EMAIL);
-  assert.equal((await w.call('POST', 'auth/authenticator/recover', { enrollmentCode: 'nope' }, { cookie: sid })).status, 403);
-  assert.equal((await w.call('POST', 'auth/authenticator/recover', { enrollmentCode: ENROLL }, { cookie: sid })).status, 200);
-  await w.enroll(sid, true);
+  assert.equal((await w.call('POST', 'auth/authenticator/recover', { enrollmentCode: BOOTSTRAP }, { cookie: sid })).status, 403, 'the bootstrap code cannot recover');
+  assert.equal((await w.call('POST', 'auth/authenticator/recover', { enrollmentCode: RECOVERY }, { cookie: sid })).status, 200);
+  assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: old })).status, 401, 'other sessions ended');
+  assert.equal((await w.call('POST', 'auth/verify', { token: outstanding })).status, 400, 'outstanding links cancelled');
+  const me = (await w.call('GET', 'auth/me', undefined, { cookie: sid })).body;
+  assert.equal(me.founderEnrollmentCodeRequired, false, 'recovered session sets up without the bootstrap code');
+  const s = await w.setup(sid, false);
+  assert.equal((await w.call('POST', 'auth/authenticator/confirm', { setupId: s.setupId, code: w.code(s.secret) }, { cookie: sid })).status, 200);
   assert.equal((await w.call('GET', 'team', undefined, { cookie: sid })).status, 200);
+  assert.ok(w.mail.some(m => /authenticator was reset/.test(m.subject)), 'founder is told by email');
+  w.tick(16 * 60000);
+  const sid2 = await w.signIn(FOUNDER_EMAIL);
+  const again = await w.call('POST', 'auth/authenticator/recover', { enrollmentCode: RECOVERY }, { cookie: sid2 });
+  assert.equal(again.status, 403); assert.equal(again.body.error.code, 'recovery_used');
 });
 
 test('sessions expire when idle; logout cannot be undone by a later request (IR-01)', async () => {
@@ -229,7 +198,7 @@ test('cross-site and malformed mutations are blocked', async () => {
 test('coordinator cannot reach founder-only functions; client role claims are ignored', async () => {
   const w = world();
   const { sid, csid, coordId } = await team(w);
-  for (const [m, p, b] of [['GET', 'team'], ['GET', 'audit'], ['POST', 'team/invite', { email: 'x@example.com', name: 'X', role: 'coordinator' }], ['PATCH', `team/${coordId}`, { action: 'restore' }], ['POST', 'resources', { title: 'x', url: 'https://example.com' }], ['POST', 'participants/import', { source: 'founder_records', exportedAt: '2026-11-24', records: [{ firstName: 'A', email: 'a@example.com' }] }], ['POST', 'research/cohorts', { name: 'X' }]])
+  for (const [m, p, b] of [['GET', 'team'], ['GET', 'audit'], ['POST', 'team/invite', { email: 'x@example.com', name: 'X', role: 'coordinator' }], ['PATCH', `team/${coordId}`, { action: 'restore' }], ['POST', 'resources', { title: 'x', url: 'https://example.com' }], ['POST', 'participants/import', { source: 'founder_records', exportRef: 'x', exportedAt: '2026-11-24', expectedCount: 1, records: [{ firstName: 'A', email: 'a@example.com', consent: { value: 'yes', version: 'v' } }] }], ['POST', 'participants/backfill', { receiptIds: [] }], ['POST', 'research/cohorts', { name: 'X' }]])
     assert.equal((await w.call(m, p, b, { cookie: csid })).status, 403, `${m} ${p}`);
   assert.equal((await w.call('GET', 'team', undefined, { cookie: csid, headers: { 'x-role': 'founder' } })).status, 403);
   assert.equal((await w.call('POST', 'team/invite', { email: 'b@example.com', name: 'B', role: 'founder' }, { cookie: sid })).status, 400);
@@ -302,18 +271,23 @@ test('IR-03/IR-09: counts are marked incomplete until the backfill is done; unre
   await ingestPilotSubmission(w.deps, { ...base, first_name: 'Hotel', email: 'hotel@example.com' }, '2026-11-24T16:01:00.000Z');
   let d = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body;
   let reg = d.metrics.find(x => x.id === 'registrations');
-  assert.equal(reg.value, 0); assert.equal(reg.status, 'incomplete'); assert.match(reg.definition, /2 more waiting for review/); assert.match(reg.definition, /not been imported/);
+  assert.equal(reg.value, 0); assert.equal(reg.status, 'incomplete'); assert.match(reg.definition, /2 waiting for review/); assert.match(reg.definition, /not been reconciled/);
   const list = (await w.call('GET', 'participants', undefined, { cookie: sid })).body.participants;
   for (const p of list) await w.call('PATCH', `participants/${p.id}`, { isTest: p.firstName === 'Hotel', version: p.version }, { cookie: sid });
-  await w.call('POST', 'participants/import', { source: 'app_identity_export', exportedAt: '2026-11-24', records: [{ firstName: 'India', email: 'india@example.com' }], markBackfillComplete: true }, { cookie: sid });
+  const beta = await w.call('POST', 'participants/import', { source: 'app_identity_export', exportRef: 'identity-users.csv', exportedAt: '2026-11-24', expectedCount: 1, records: [{ firstName: 'India', email: 'india@example.com', sourceSubmissionId: 'u-india' }] }, { cookie: sid });
+  const forms = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportRef: 'pilot-form.csv', exportedAt: '2026-11-24', expectedCount: 0, records: [] }, { cookie: sid });
+  assert.equal(beta.body.reconciled, true); assert.equal(forms.body.reconciled, true);
+  const india = (await w.call('GET', 'participants', undefined, { cookie: sid })).body.participants.find(p => p.firstName === 'India');
+  await w.call('PATCH', `participants/${india.id}`, { isTest: false, version: india.version }, { cookie: sid });
+  assert.equal((await w.call('POST', 'participants/backfill', { receiptIds: [beta.body.receiptId, forms.body.receiptId] }, { cookie: sid })).status, 200);
   d = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body;
   reg = d.metrics.find(x => x.id === 'registrations');
-  assert.equal(reg.value, 1); assert.equal(reg.status, 'actual');
+  assert.equal(reg.value, 1); assert.equal(reg.status, 'actual'); assert.equal(reg.households, 1);
   assert.equal(d.metrics.find(x => x.id === 'beta').value, 1);
 });
 
 // ---------- Intake (IR-04) ----------
-const FORM = { 'form-name': 'pilot', source: 'direct', company: '', first_name: 'Juliet', email: 'Juliet@Example.com', children_under_10: '2', heard_from: 'An event', consent: 'yes' };
+
 test('IR-04: intake uses the strict welcome-email check', async () => {
   const w = world();
   for (const bad of [{ consent: 'no' }, { company: 'bot' }, { 'form-name': 'other' }, { children_under_10: '7' }, { email: 'a@example.com,b@example.com' }, { source: 'bad source!' }, { first_name: '<x>' }])
@@ -352,13 +326,29 @@ test('IR-04: someone added by hand who then registers is promoted, keeping both 
   assert.equal((await db.sql`SELECT technical_source FROM participants`)[0].technical_source, 'campus', 'first source kept');
 });
 
-test('IR-09: founder import keeps provenance and skips existing people', async () => {
+test('IR-09/R2-03: founder import needs source ids and consent, writes ledger rows and a receipt, and links existing people', async () => {
   const w = world();
   const { sid } = await w.ready(FOUNDER_EMAIL);
-  const r = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportedAt: '2026-11-24', records: [{ firstName: 'Kilo', email: 'kilo@example.com', source: 'direct', submittedAt: '2026-11-12T10:00:00Z' }, { firstName: 'Kilo again', email: 'KILO@example.com' }] }, { cookie: sid });
-  assert.equal(r.status, 201); assert.deepEqual(r.body, { created: 1, alreadyExisted: 1 });
+  const consent = { value: 'yes', version: 'pilot-form:2026-11' };
+  const base = { source: 'netlify_forms_export', exportRef: 'pilot-form-2026-11-24.csv', exportedAt: '2026-11-24', expectedCount: 2 };
+  assert.equal((await w.call('POST', 'participants/import', { ...base, records: [{ firstName: 'Kilo', email: 'kilo@example.com', consent }] }, { cookie: sid })).status, 400, 'source id required');
+  assert.equal((await w.call('POST', 'participants/import', { ...base, records: [{ firstName: 'Kilo', email: 'kilo@example.com', sourceSubmissionId: 's1' }] }, { cookie: sid })).status, 400, 'consent required');
+  const r = await w.call('POST', 'participants/import', { ...base, records: [
+    { firstName: 'Kilo', email: 'kilo@example.com', source: 'direct', submittedAt: '2026-11-12T10:00:00Z', sourceSubmissionId: 's1', consent },
+    { firstName: 'Kilo again', email: 'KILO@example.com', sourceSubmissionId: 's2', consent }] }, { cookie: sid });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.deepEqual({ created: r.body.created, linked: r.body.linked, reconciled: r.body.reconciled }, { created: 1, linked: 1, reconciled: true });
   const p = (await db.sql`SELECT origin, intake, is_test FROM participants`)[0];
   assert.equal(p.origin, 'import:netlify_forms_export'); assert.equal(p.intake.exportedAt, '2026-11-24'); assert.equal(p.is_test, null);
+  const ledger = await db.sql`SELECT provenance, source_submission_id, consent, receipt_id FROM pilot_intake_records ORDER BY source_submission_id`;
+  assert.deepEqual(ledger.map(l => [l.provenance, l.source_submission_id, l.consent.value, l.consent.version, l.receipt_id]), [['founder_import', 's1', 'yes', 'pilot-form:2026-11', r.body.receiptId], ['founder_import', 's2', 'yes', 'pilot-form:2026-11', r.body.receiptId]]);
+  const again = await w.call('POST', 'participants/import', { ...base, records: [{ firstName: 'Kilo', email: 'kilo@example.com', source: 'direct', submittedAt: '2026-11-12T10:00:00Z', sourceSubmissionId: 's1', consent }] }, { cookie: sid });
+  assert.equal(again.body.alreadyImported, 1); assert.equal(again.body.reconciled, false, '1 of 2 rows does not reconcile');
+});
+test('R2-03: the pilot form consent version matches the text the form shows', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const label = html.match(/name="consent"[^>]*>\s*<span>([\s\S]*?)<\/span>/)[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  assert.equal(label, PILOT_CONSENT_TEXT, 'consent text changed: update PILOT_CONSENT_TEXT so new registrations carry a new version');
 });
 
 // ---------- Relationships (IR-05) ----------
@@ -455,43 +445,60 @@ test('content: draft → approval → posted; nothing unapproved can be marked p
 });
 
 // ---------- Research & surveys ----------
-test('research: questionnaire must be approved before any link; one-time links; results scoped by role', async () => {
+async function approvedSurvey(w, sid, csid) {
+  const draft = (await w.call('GET', 'research', undefined, { cookie: csid })).body.surveys[0];
+  await w.call('POST', `research/surveys/${draft.id}/submit`, {}, { cookie: csid });
+  const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'survey' && a.status === 'pending');
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid })).status, 200);
+  return draft;
+}
+test('research: questionnaire and notice must be approved before any link; consent on the page; one-time links; results scoped by role', async () => {
   const w = world();
   const { sid, csid, coordId } = await team(w);
-  const draft = (await w.call('GET', 'research', undefined, { cookie: csid })).body.surveys[0];
+  const overview = (await w.call('GET', 'research', undefined, { cookie: csid })).body;
+  const draft = overview.surveys[0];
   assert.equal(draft.status, 'draft'); assert.equal(draft.questions.length, 15);
   assert.ok(!JSON.stringify(draft.questions).match(/child'?s name|birthday|school/i));
-  let p = (await w.call('POST', 'participants', { firstName: 'Lima', email: 'lima@example.com', cohort: 'pilot' }, { cookie: sid })).body.participant;
-  p = (await w.call('PATCH', `participants/${p.id}`, { assignedTo: coordId, version: p.version }, { cookie: sid })).body.participant;
+  assert.equal(overview.notice.approvedCurrent, false);
+  const p = await reviewedParticipant(w, sid, { firstName: 'Lima', email: 'lima@example.com', assignedTo: coordId });
   const other = (await w.call('POST', 'participants', { firstName: 'Mike', cohort: 'pilot' }, { cookie: sid })).body.participant;
   const cohort = (await w.call('POST', 'research/cohorts', { name: "Marilyn's parent testers", partner: 'Marilyn', plannedSize: '5', deadline: '2026-12-19' }, { cookie: sid })).body.id;
-  assert.equal((await w.call('POST', `research/cohorts/${cohort}/enroll`, { participantId: p.id, status: 'consented' }, { cookie: csid })).status, 201);
+  assert.equal((await w.call('POST', `research/cohorts/${cohort}/enroll`, { participantId: p.id, status: 'consented' }, { cookie: csid })).status, 400, 'nobody can set "consented"');
+  assert.equal((await w.call('POST', `research/cohorts/${cohort}/enroll`, { participantId: p.id }, { cookie: csid })).status, 201);
   assert.equal((await w.call('POST', `research/cohorts/${cohort}/enroll`, { participantId: other.id }, { cookie: csid })).status, 400, 'only assigned');
   assert.equal((await w.call('POST', 'research/sessions', { cohortId: cohort, participantId: p.id, kind: 'initial', completed: true, observations: 'Found the wheel quickly' }, { cookie: csid })).status, 201);
+  assert.equal((await w.call('POST', 'research/invites', { surveyId: draft.id, participantId: p.id }, { cookie: csid })).status, 400, 'notice not approved');
+  assert.equal((await w.call('POST', 'research/notice/approve', { version: overview.notice.current.version }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('POST', 'research/notice/approve', { version: overview.notice.current.version }, { cookie: sid })).status, 200);
   assert.equal((await w.call('POST', 'research/invites', { surveyId: draft.id, participantId: p.id }, { cookie: csid })).status, 400, 'draft cannot be sent');
-  await w.call('POST', `research/surveys/${draft.id}/submit`, {}, { cookie: csid });
-  const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'survey');
-  await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  await approvedSurvey(w, sid, csid);
   const inv = await w.call('POST', 'research/invites', { surveyId: draft.id, participantId: p.id, cohortId: cohort }, { cookie: csid });
-  assert.equal(inv.status, 201);
+  assert.equal(inv.status, 201, JSON.stringify(inv.body));
   const token = inv.body.link.match(/#t=([\w-]+)/)[1];
   assert.match(inv.body.link, /^https:\/\/spinfamilyapp\.com\/pilot\/survey\/#t=/);
   const load = await w.call('POST', 'public/survey/load', { token });
   assert.equal(load.status, 200); assert.equal(load.body.questions.length, 15); assert.ok(!JSON.stringify(load.body).includes('lima@example.com'));
-  assert.equal((await w.call('POST', 'public/survey/submit', { token, answers: { q4: 9 } })).status, 400, 'scale checked');
-  assert.equal((await w.call('POST', 'public/survey/submit', { token, answers: { zzz: 'x' } })).status, 400, 'unknown question');
+  assert.equal(load.body.consentOnFile, false); assert.ok(load.body.notice.text.length >= 3);
+  assert.equal((await w.call('POST', 'public/survey/submit', { token, answers: { q4: 5 } })).body.error.code, 'consent_required');
+  const yes = { consent: true, noticeVersion: load.body.notice.version };
+  assert.equal((await w.call('POST', 'public/survey/submit', { token, ...yes, answers: { q4: 9 } })).status, 400, 'scale checked');
+  assert.equal((await w.call('POST', 'public/survey/submit', { token, ...yes, answers: { zzz: 'x' } })).status, 400, 'unknown question');
   const [s1, s2] = await Promise.all([
-    w.call('POST', 'public/survey/submit', { token, answers: { q4: 5, q7: 'yes', q13: 'Maybe', q15: 'Loved the wheel' } }),
-    w.call('POST', 'public/survey/submit', { token, answers: { q4: 1 } }),
+    w.call('POST', 'public/survey/submit', { token, ...yes, answers: { q4: 5, q7: 'yes', q13: 'Maybe', q15: 'Loved the wheel' } }),
+    w.call('POST', 'public/survey/submit', { token, ...yes, answers: { q4: 1 } }),
   ]);
   assert.deepEqual([s1.status, s2.status].sort(), [200, 400], 'single use under parallel submits');
   assert.equal((await w.call('POST', 'public/survey/load', { token })).status, 400);
+  assert.equal((await db.sql`SELECT count(*)::int n FROM research_consents WHERE method = 'participant_survey_page'`)[0].n, 1);
   const coordResults = (await w.call('GET', `research/surveys/${draft.id}/results`, undefined, { cookie: csid })).body;
-  assert.equal(coordResults.responses, 1); assert.equal(coordResults.individual, null);
-  assert.deepEqual(coordResults.summary.find(q => q.id === 'q15').answers, []);
+  assert.equal(coordResults.responses, '<5', 'fewer than 5 responses are hidden from coordinators'); assert.equal(coordResults.individual, null);
+  assert.deepEqual(coordResults.summary.find(q => q.id === 'q4').counts, {});
   const founderResults = (await w.call('GET', `research/surveys/${draft.id}/results`, undefined, { cookie: sid })).body;
   assert.equal(founderResults.individual.length, 1);
-  assert.ok(founderResults.summary.find(q => q.id === 'q15').answers.includes('Loved the wheel'));
+  // Whichever parallel submit won is the one saved, in full.
+  const winner = s1.status === 200 ? 'Loved the wheel' : undefined;
+  assert.deepEqual(founderResults.summary.find(q => q.id === 'q15').answers, winner ? [winner] : []);
+  assert.equal(founderResults.individual[0].answers.q4, s1.status === 200 ? 5 : 1);
   assert.equal((await w.call('GET', `participants/${p.id}`, undefined, { cookie: sid })).body.participant.engagement, 'unknown', 'a survey answer does not change engagement');
 });
 
@@ -503,13 +510,24 @@ test('IR-02: production is recognised only from trusted runtime facts; anything 
   assert.equal(runtimeFacts({ site: { id: 'other-site' }, deploy: { context: 'production' } }, () => undefined).isProduction, false, 'wrong site');
   assert.equal(runtimeFacts(undefined, k => ({ SITE_ID, CONTEXT: 'production' })[k]).isProduction, true);
   assert.equal(runtimeFacts(undefined, k => ({ SITE_ID })[k]).isProduction, false, 'CONTEXT missing');
+  assert.equal(runtimeFacts({ site: { id: SITE_ID }, deploy: { context: 'dev' } }, () => undefined).supported, false, 'unsupported context');
+  assert.equal(runtimeFacts({ site: { id: SITE_ID } }, () => undefined).supported, false, 'unknown context');
+  assert.equal(runtimeFacts({ site: { id: SITE_ID }, deploy: { context: 'branch-deploy' } }, () => undefined).supported, true);
+  const prodSecrets = secretsFor({ isProduction: true }, k => ({ OPS_FOUNDER_BOOTSTRAP_CODE: 'a', OPS_FOUNDER_RECOVERY_CODE: 'b', OPS_PREVIEW_BOOTSTRAP_CODE: 'c' })[k]);
+  const previewSecrets = secretsFor({ isProduction: false }, k => ({ OPS_FOUNDER_BOOTSTRAP_CODE: 'a', OPS_FOUNDER_RECOVERY_CODE: 'b', OPS_PREVIEW_BOOTSTRAP_CODE: 'c' })[k]);
+  assert.deepEqual([prodSecrets.bootstrap, prodSecrets.recovery], ['a', 'b']);
+  assert.deepEqual([previewSecrets.bootstrap, previewSecrets.recovery], ['c', null], 'previews never read production codes');
 });
 test('IR-02: intake function and API stay out of production and email outside production', () => {
   const intake = readFileSync(new URL('../netlify/functions/ops-intake.mjs', import.meta.url), 'utf8');
   assert.match(intake, /if \(!facts\.isProduction\)/); assert.doesNotMatch(intake, /!process\.env\.CONTEXT/);
   const api = readFileSync(new URL('../netlify/functions/ops-api.mjs', import.meta.url), 'utf8');
   assert.match(api, /if \(!facts\.isProduction\) throw new Error\('Email is turned off outside production'\)/);
-  assert.match(api, /filesFor\(facts\.isProduction\)/); assert.match(api, /refused_unknown_site/);
+  assert.match(api, /filesFor\(facts\.isProduction\)/); assert.match(api, /refused_unknown_site/); assert.match(api, /refused_unsupported_context/);
+  // The database client is created only after the guards (R2-02).
+  assert.ok(api.indexOf('getDatabase()') > api.indexOf('refused_unsupported_context'), 'no database client before the guard');
+  assert.doesNotMatch(api.slice(0, api.indexOf('export default')), /getDatabase\(\)/);
+  assert.match(intake, /checkEnvironment/);
   assert.match(readFileSync(new URL('../lib/ops/files.mjs', import.meta.url), 'utf8'), /getDeployStore/);
 });
 test('preview sign-in through Netlify team login is preview-only', async () => {
@@ -530,6 +548,7 @@ test('history, audit and intake ledger cannot be edited or deleted', async () =>
   for (const t of ['audit_events', 'participant_history', 'pilot_intake_records'])
     await assert.rejects(async () => { await db.sql.unsafe(`DELETE FROM ${t}`); }, appendOnly, t);
   await assert.rejects(async () => { await db.sql`UPDATE audit_events SET action = 'x'`; }, appendOnly);
+  await assert.rejects(async () => { await db.sql`UPDATE participant_history SET changes = '[]'::jsonb`; }, appendOnly, 'no redaction outside the workflow');
 });
 test('audit log holds ids and actions, not email addresses', async () => {
   const w = world();

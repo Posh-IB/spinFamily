@@ -76,3 +76,4 @@ label.row input{width:auto;min-height:0}
 h3{font-size:16px;margin:8px 0 4px}
 .tag.incomplete,.tag.field_report{background:#FFF0D6;color:var(--warn)}
 .pre{white-space:pre-wrap}
+dl dt{margin-top:.4rem}dl dd{margin:0;overflow-wrap:anywhere}

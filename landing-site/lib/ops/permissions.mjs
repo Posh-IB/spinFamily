@@ -37,12 +37,15 @@ const MATRIX = {
   'surveys.approve': F,
   'responses.view.full': F,
   'responses.view.aggregate': BOTH,
+  'research.consent.record': F, // record written research consent the founder holds
+  'research.notice.approve': F,
+  'participants.redact': F,
   'team.manage': F,
   'audit.view': F,
 };
 
 // Actions that also require a confirmed authenticator code in this session.
-export const STEP_UP = new Set(['team.manage', 'participants.contact.all', 'participants.assign', 'participants.markTest', 'participants.verify', 'resources.manage', 'audit.view', 'relationships.approveOffer', 'approvals.decide', 'surveys.approve', 'responses.view.full', 'research.manage']);
+export const STEP_UP = new Set(['team.manage', 'participants.contact.all', 'participants.assign', 'participants.markTest', 'participants.verify', 'resources.manage', 'audit.view', 'relationships.approveOffer', 'approvals.decide', 'surveys.approve', 'responses.view.full', 'research.manage', 'research.consent.record', 'research.notice.approve', 'participants.redact']);
 
 // `member` is the membership view: { role, status }.
 export function can(member, action) {
