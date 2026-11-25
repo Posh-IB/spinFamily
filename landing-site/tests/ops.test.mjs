@@ -205,8 +205,8 @@ test('IR-01: a session started in the same instant as a revocation does not surv
 test('founder can move a teammate to a company email; old sessions and links end', async () => {
   const w = world();
   const { sid, csid, coordId } = await team(w);
-  const r = await w.call('PATCH', `team/${coordId}`, { email: 'lindseywhitaker@spinfamilyapp.com' }, { cookie: sid });
-  assert.equal(r.status, 200); assert.equal(r.body.member.email, 'lindseywhitaker@spinfamilyapp.com');
+  const r = await w.call('PATCH', `team/${coordId}`, { email: 'new-address@example.com' }, { cookie: sid });
+  assert.equal(r.status, 200); assert.equal(r.body.member.email, 'new-address@example.com');
   assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: csid })).status, 401);
   w.tick(1000);
   const before = w.mail.length;
