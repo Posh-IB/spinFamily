@@ -253,7 +253,7 @@ test('R2-03: same submission id with different content is held for review, chang
 test('R2-03: an import that does not reconcile with its export cannot complete the backfill', async () => {
   const { w } = setup();
   const { sid } = await w.ready(FOUNDER_EMAIL);
-  const one = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportRef: 'f.csv', exportedAt: '2026-11-24', expectedCount: 3, records: [{ firstName: 'Papa', email: 'papa@example.com', sourceSubmissionId: 's-p', consent: { value: 'yes', version: 'v1' } }] }, { cookie: sid });
+  const one = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportRef: 'f.csv', exportedAt: '2026-11-24', expectedCount: 3, consentEvidence: 'Archived form page, Drive', records: [{ firstName: 'Papa', email: 'papa@example.com', sourceSubmissionId: 's-p', consent: { value: 'yes', version: 'v1' } }] }, { cookie: sid });
   assert.equal(one.body.reconciled, false);
   const app = await w.call('POST', 'participants/import', { source: 'app_identity_export', exportRef: 'a.csv', exportedAt: '2026-11-24', expectedCount: 0, records: [] }, { cookie: sid });
   const r = await w.call('POST', 'participants/backfill', { receiptIds: [one.body.receiptId, app.body.receiptId] }, { cookie: sid });
@@ -282,7 +282,7 @@ test('R2-03: metrics come from evidence: prospect conversion counts; tests, unre
   s = (await w.call('PATCH', `participants/${s.id}`, { engagement: 'pilot_completed', verify: { engagement: true }, evidenceNote: 'Checked app logs', version: s.version }, { cookie: sid })).body.participant;
   const m = Object.fromEntries((await w.call('GET', 'dashboard', undefined, { cookie: sid })).body.metrics.map(x => [x.id, x]));
   assert.equal(m.registrations.value, 3, 'Quebec, Romeo, Sierra');
-  assert.equal(m.registrations.households, 2, 'Quebec and Romeo share a household');
+  assert.deepEqual(m.registrations.households, { known: 1, notRecorded: 1 }, 'Quebec and Romeo share household H1; Sierra has none recorded');
   assert.match(m.registrations.definition, /1 waiting for review/); assert.match(m.registrations.definition, /1 withdrew/);
   assert.equal(m.activation.value, 0, 'pilot_completed is not activation');
   // A withdrawn record can't be edited back into the numbers.
@@ -317,7 +317,7 @@ test('R2-04: an edit after submission supersedes the request; the old request ca
   assert.equal(ap.snapshot.questions.length, 15); assert.match(ap.digest, /^[a-f0-9]{64}$/);
   const edited = await w.call('PATCH', `research/surveys/${s.id}`, { intro: 'Changed after review was requested' }, { cookie: csid });
   assert.equal(edited.status, 200);
-  const d = await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  const d = await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid });
   assert.equal(d.status, 400);
   assert.equal((await db.sql`SELECT status FROM approvals WHERE id = ${ap.id}`)[0].status, 'superseded');
   assert.equal((await db.sql`SELECT status FROM survey_definitions WHERE id = ${s.id}`)[0].status, 'draft', 'nothing approved');
@@ -349,7 +349,7 @@ test('R2-04: approve and withdraw at once: one wins, the other is refused', asyn
   const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'content_post');
   assert.equal(ap.snapshot.caption, 'Spin tonight!', 'the full caption is what gets reviewed');
   const gate = b.arm('approval.decide.checked');
-  const deciding = w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  const deciding = w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid });
   await gate.reached;
   const withdrawing = w.call('POST', `approvals/${ap.id}/withdraw`, {}, { cookie: csid });
   await waitForLockWait(pgdb.pool);
@@ -364,7 +364,7 @@ test('R2-04: a failure between decision writes leaves the request pending and th
   const s = (await w.call('GET', 'research', undefined, { cookie: csid })).body.surveys[0];
   await w.call('POST', `research/surveys/${s.id}/submit`, {}, { cookie: csid });
   let ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'survey');
-  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid })).status, 200);
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid })).status, 200);
   // v2: a new draft version, submitted for approval.
   const v2 = (await w.call('PATCH', `research/surveys/${s.id}`, { intro: 'Version two' }, { cookie: csid })).body.survey;
   assert.equal(v2.version, 2);
@@ -372,12 +372,12 @@ test('R2-04: a failure between decision writes leaves the request pending and th
   ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'survey' && a.status === 'pending');
   const outboxBefore = await count('notifications_outbox');
   w.deps.hook = failAt('approval.survey.retired');
-  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid })).status, 500);
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid })).status, 500);
   w.deps.hook = undefined;
   assert.equal((await db.sql`SELECT status FROM approvals WHERE id = ${ap.id}`)[0].status, 'pending');
   assert.deepEqual((await db.sql`SELECT version, status FROM survey_definitions ORDER BY version`).map(r => [r.version, r.status]), [[1, 'approved'], [2, 'draft']]);
   assert.equal(await count('notifications_outbox'), outboxBefore, 'no notification for a decision that did not happen');
-  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid })).status, 200);
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid })).status, 200);
   assert.deepEqual((await db.sql`SELECT version, status FROM survey_definitions ORDER BY version`).map(r => [r.version, r.status]), [[1, 'retired'], [2, 'approved']]);
   await assert.rejects(async () => { await db.sql`UPDATE survey_definitions SET status = 'approved' WHERE version = 1`; }, /survey_one_approved|duplicate key/, 'only one approved version can exist');
 });
@@ -496,4 +496,108 @@ test('R2-05: the public page needs the notice approved for the version the link 
   const token = await surveyLink(w, sid, survey.id, p.id);
   await db.sql`UPDATE org_meta SET value = jsonb_set(value, '{version}', '"older"') WHERE key = 'research_notice'`;
   assert.equal((await w.call('POST', 'public/survey/load', { token })).status, 400);
+});
+
+// =============================== Third review (6052378857) ===============================
+test('R3: an imported "no" to consent is recorded as intake but never counted as recruitment', async () => {
+  const { w } = setup();
+  const { sid } = await w.ready(FOUNDER_EMAIL);
+  const r = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportRef: 'f.csv', exportedAt: '2026-11-24', expectedCount: 2, consentEvidence: 'Archived form, Drive',
+    records: [{ firstName: 'Echo', email: 'echo@example.com', sourceSubmissionId: 'e1', consent: { value: 'yes', version: 'v1' } }, { firstName: 'Foxtrot', email: 'foxtrot@example.com', sourceSubmissionId: 'f1', consent: { value: 'no', version: 'v1' } }] }, { cookie: sid });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  for (const p of (await w.call('GET', 'participants', undefined, { cookie: sid })).body.participants)
+    await w.call('PATCH', `participants/${p.id}`, { isTest: false, version: p.version }, { cookie: sid });
+  const reg = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body.metrics.find(m => m.id === 'registrations');
+  assert.equal(reg.value, 1); assert.match(reg.definition, /1 registered without consent/);
+  assert.equal(await count('cohort_memberships'), 1, 'no program membership without consent');
+  assert.equal((await db.sql`SELECT consent FROM pilot_intake_records WHERE source_submission_id = 'f1'`)[0].consent.evidence, 'Archived form, Drive');
+});
+
+test('R3: the same submission with a different consent answer is held for review, not silently merged', async () => {
+  const { w } = setup();
+  const { sid } = await w.ready(FOUNDER_EMAIL);
+  assert.equal(await ingestPilotSubmission(w.deps, FORM, '2026-11-24T16:00:00.000Z', { submissionId: 'same-1' }), 'created');
+  const r = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportRef: 'f.csv', exportedAt: '2026-11-24', expectedCount: 1, consentEvidence: 'Archived form',
+    records: [{ firstName: 'Juliet', email: 'juliet@example.com', sourceSubmissionId: 'same-1', consent: { value: 'no', version: 'v1' } }] }, { cookie: sid });
+  assert.equal(r.body.conflicts, 1); assert.equal(r.body.reconciled, false);
+  // An export row that agrees on consent is the same registration.
+  const ok = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportRef: 'f2.csv', exportedAt: '2026-11-24', expectedCount: 1, consentEvidence: 'Archived form',
+    records: [{ firstName: 'Juliet', email: 'juliet@example.com', sourceSubmissionId: 'same-1', consent: { value: 'yes', version: 'v1' } }] }, { cookie: sid });
+  assert.equal(ok.body.alreadyImported, 1); assert.equal(ok.body.reconciled, true);
+});
+
+test('R3: a write queued behind a revocation is refused; a write already holding the lock commits first', async () => {
+  // Revoke holds the member lock: the coordinator's write waits, then sees the revocation.
+  let { b, w } = setup();
+  let { sid, csid, coordId } = await team(w);
+  let gate = b.arm('team.change.locked');
+  const revoking = w.call('PATCH', `team/${coordId}`, { action: 'revoke' }, { cookie: sid });
+  await gate.reached;
+  const writing = w.call('POST', 'participants', { firstName: 'Golf' }, { cookie: csid });
+  await waitForLockWait(pgdb.pool);
+  gate.release();
+  await revoking;
+  assert.equal((await writing).status, 401);
+  assert.equal(await count('participants'), 0);
+
+  // The coordinator's write already holds its share lock: the revoke waits for it to commit.
+  await pgdb.reset();
+  ({ b, w } = setup());
+  ({ sid, csid, coordId } = await team(w));
+  gate = b.arm('write.authority.checked');
+  const write2 = w.call('POST', 'participants', { firstName: 'Hotel' }, { cookie: csid });
+  await gate.reached;
+  const revoke2 = w.call('PATCH', `team/${coordId}`, { action: 'revoke' }, { cookie: sid });
+  await waitForLockWait(pgdb.pool);
+  gate.release();
+  assert.equal((await write2).status, 201); assert.equal((await revoke2).status, 200);
+  assert.equal((await w.call('POST', 'participants', { firstName: 'India' }, { cookie: csid })).status, 401);
+});
+
+test('R3: decisions must carry the digest that was reviewed', async () => {
+  const { w } = setup();
+  const { sid, csid } = await team(w);
+  await w.call('POST', 'approvals', { itemType: 'message', channel: 'email', to: 'Someone', message: 'Hello' }, { cookie: csid });
+  const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals[0];
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid })).status, 400);
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: 'a'.repeat(64) }, { cookie: sid })).status, 409);
+  assert.equal((await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved', digest: ap.digest }, { cookie: sid })).status, 200);
+});
+
+test('R3: an email whose outcome is unknown is marked uncertain, not resent, and shown to the founder', async () => {
+  const { w } = setup();
+  const { sid, csid } = await team(w);
+  let sends = 0;
+  w.deps.sendMail = async () => { sends++; throw Object.assign(new Error('socket closed'), { code: 'ETIMEDOUT' }); };
+  await w.call('POST', 'approvals', { itemType: 'message', channel: 'email', to: 'Someone', message: 'Hello' }, { cookie: csid });
+  await w.call('POST', 'auth/logout', {});
+  assert.equal(sends, 1, 'not retried');
+  assert.equal((await db.sql`SELECT status FROM notifications_outbox`)[0].status, 'uncertain');
+  const m = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body.metrics.find(x => x.id === 'emails');
+  assert.equal(m.value, 1); assert.match(m.definition, /1 may or may not have been delivered/);
+  // A row stuck in "sending" (process died mid-send) also becomes uncertain after 10 minutes.
+  await db.sql`UPDATE notifications_outbox SET status = 'sending', last_attempt_at = ${new Date(w.clock - 11 * 60000).toISOString()}`;
+  await w.call('POST', 'auth/logout', {});
+  assert.equal((await db.sql`SELECT status FROM notifications_outbox`)[0].status, 'uncertain');
+});
+
+test('R3: switching research off closes survey links already sent; withdrawal still works; a changed notice needs consent again', async () => {
+  const { w } = setup();
+  const { sid, csid } = await team(w);
+  const { survey, notice } = await researchReady(w, sid, csid);
+  const p = await reviewedParticipant(w, sid, { firstName: 'Kilo', email: 'kilo@example.com' });
+  const token = await surveyLink(w, sid, survey.id, p.id);
+  w.deps.features = new Set();
+  assert.equal((await w.call('POST', 'public/survey/load', { token })).status, 400);
+  assert.equal((await w.call('POST', 'public/survey/submit', { token, consent: true, noticeVersion: notice.version, answers: { q4: 3 } })).status, 400);
+  w.deps.features = new Set(['research']);
+  const p2 = await reviewedParticipant(w, sid, { firstName: 'Lima', email: 'lima2@example.com' });
+  const t2 = await surveyLink(w, sid, survey.id, p2.id);
+  // Consent given under an older notice version doesn't count for the current one.
+  await db.sql`INSERT INTO research_consents (id, org_id, participant_id, purpose, notice_version, method, given_at, recorded_by) VALUES ('rcn_old', 'spinfamily', ${p2.id}, 'pilot_research', 'older-notice', 'founder_recorded_written', now(), 'x')`;
+  assert.equal((await w.call('POST', 'public/survey/load', { token: t2 })).body.consentOnFile, false);
+  assert.equal((await w.call('POST', 'public/survey/submit', { token: t2, answers: { q4: 3 } })).body.error.code, 'consent_required');
+  assert.equal((await w.call('POST', 'public/survey/submit', { token: t2, consent: true, noticeVersion: notice.version, answers: { q4: 3 } })).status, 200);
+  w.deps.features = new Set();
+  assert.equal((await w.call('POST', 'public/survey/withdraw', { token })).status, 200, 'withdrawal works with research switched off');
 });

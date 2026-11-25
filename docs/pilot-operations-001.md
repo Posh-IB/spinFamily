@@ -22,7 +22,7 @@
 
 **ADR-1 Separate team sign-in.** Invite-only passwordless email links on the landing project. Parents' app accounts (Netlify Identity on `spinfamily-app`) never grant workspace access. Links are single-use, 15 minutes, stored as hashes, delivered as a URL fragment, and need a button press.
 
-**ADR-2 (revised for IR-07) Authenticator for everyone.** Every team member enrolls a TOTP authenticator and enters a code at every sign-in before any data loads. The founder's *first* enrollment, and any founder recovery, requires the one-time setup code stored in Netlify as `OPS_FOUNDER_ENROLLMENT_CODE`. That proves control of the hosting account, not just the mailbox. The founder can reset a teammate's authenticator.
+**ADR-2 (revised for IR-07) Authenticator for everyone.** Every team member enrolls a TOTP authenticator and enters a code at every sign-in before any data loads. The founder's *first* enrollment, and any founder recovery, requires a one-time code from Netlify: `OPS_FOUNDER_BOOTSTRAP_CODE` for the first enrollment and `OPS_FOUNDER_RECOVERY_CODE` for recovery (previews use `OPS_PREVIEW_*`; see §3a and §7). That proves control of the hosting account, not just the mailbox. The founder can reset a teammate's authenticator.
 
 **ADR-3 (revised) Netlify Database (Postgres) for records; Netlify Blobs for file bytes.** Founder approved the move on Nov 24. Postgres gives atomic conditional updates, unique constraints and row locks, which close the race findings in IR-01/04/05 by construction. Uploaded files stay in Blobs: a site-wide store in production and a deploy-scoped store per preview. Netlify gives each deploy preview its own database branch forked from production. Preview branches can therefore contain real data once production has some, and previews only open with Netlify team login. Cost: Netlify Database uses credits for compute while active (storage currently free). Each open preview uses one branch.
 
@@ -58,6 +58,18 @@
 | Operational | Lists bounded (participants paged at 200; others capped). File uploads and downloads held behind `OPS_FEATURES=uploads`. | |
 
 Tests now run on a real PostgreSQL 17 server (embedded-postgres) with a 12-connection pool instead of the single-connection PGlite engine.
+
+## 3b. Third review (6052378857 on `21f4103`): follow-ups
+
+| Item | Change | Tests |
+|---|---|---|
+| Consent (R2-03) | Payload hash includes consent value/version and source timestamp. A same-id export that disagrees on consent is held in `intake_conflicts`. Registrations count only ledger rows with consent "yes"; consent-negative intake is recorded, noted on the dashboard, and never joins a program. Imports require `consentEvidence` (where the historical consent wording/version is evidenced). | R3 consent-no import; same-id consent mismatch |
+| Households (R2-03) | Reported as known households plus people with household not recorded; never a derived "verified household" count. | metrics test |
+| Authority boundary (R2-01) | Reads use the authority checked at request start. Every write runs in one transaction that first takes a share lock on the member and membership and re-checks active status and session generation; a revocation waits for an in-flight write or the write is refused (401). | R3 write vs revoke, both orders |
+| Outbox (R2-04) | States queued → sending → sent / failed / uncertain. The attempt is committed before SMTP; only errors that occur before the server could accept are retried; anything else, or a row stuck in sending for 10 minutes, becomes `uncertain` and is not resent. Founder dashboard shows uncertain and abandoned emails. No exactly-once claim. Decisions require the reviewed digest. Posted status shows whether a link was given (unchecked) or it was only reported. Nothing is pushed to Buffer/Meta. | R3 uncertain email; digest required |
+| Research (R2-05) | With `research` off, survey links cannot be opened or answered (withdrawal still works). Consent counts only for the current approved notice version; a changed notice asks again. Notice approval and eligibility (opt-out, research withdrawal, cohort withdrawal) are re-read inside the submit transaction. | R3 kill switch; re-consent |
+
+Still open for founder/Gideon: hosted walkthrough; provider-level preview database isolation (or disabling workspace previews) before any real backfill; verify receipts against actual exports; retention schedule; batch outcome before merge.
 
 ## 4. What's in the branch
 

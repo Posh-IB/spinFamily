@@ -4,6 +4,7 @@ import { parsePilot } from '../pilot-welcome.mjs';
 import { json, notFound, Invalid, newId, iso, text, oneOf, date, count, maskEmail, row, rows, asJson } from './util.mjs';
 import { memberById } from './core.mjs';
 import { inTx, barrier } from './db.mjs';
+import { outboxHealth } from './outbox.mjs';
 
 export const REFS = ['instagram', 'facebook', 'fbgroups', 'tiktok', 'lindsey', 'campus', 'campus-groups', 'direct', 'other', 'unknown'];
 class Conflict extends Error { constructor() { super('conflict'); this.conflict = true; } }
@@ -198,13 +199,15 @@ async function recordIntake(deps, x) {
     // Serialize everything about the same submission and the same person.
     if (x.submissionId) await t.sql`SELECT pg_advisory_xact_lock(hashtext(${`intake-id:${t.orgId}:${x.submissionId}`}))`;
     await t.sql`SELECT pg_advisory_xact_lock(hashtext(${`intake-email:${t.orgId}:${x.email}`}))`;
-    const payloadHash = sha256(JSON.stringify([x.email, x.firstName, x.source, x.heardFrom, x.children ?? null, x.submissionId, x.cohort]));
+    // Consent and the source timestamp are part of what was received, so a redelivery that differs in either is not a duplicate.
+    const payloadHash = sha256(JSON.stringify([x.email, x.firstName, x.source, x.heardFrom, x.children ?? null, x.submissionId, x.cohort, x.consent?.value ?? null, x.consent?.version ?? null, x.sourceTs ?? null]));
     if (x.submissionId) {
-      const prior = (await t.sql`SELECT r.id, r.payload_hash, r.provenance, p.email FROM pilot_intake_records r LEFT JOIN participants p ON p.id = r.participant_id WHERE r.org_id = ${t.orgId} AND r.source_submission_id = ${x.submissionId}`)[0];
+      const prior = (await t.sql`SELECT r.id, r.payload_hash, r.provenance, r.consent, p.email FROM pilot_intake_records r LEFT JOIN participants p ON p.id = r.participant_id WHERE r.org_id = ${t.orgId} AND r.source_submission_id = ${x.submissionId}`)[0];
       if (prior && prior.payload_hash === payloadHash) return 'duplicate_event';
       // An export row for a submission the live form already delivered differs only in which fields the
       // export carries: same id, same person is the same registration. Anything else is held for review.
-      if (prior && (prior.provenance === 'founder_import') !== (x.provenance === 'founder_import') && prior.email === x.email) return 'duplicate_event';
+      // Only if the consent answer agrees: a different consent answer is held for review, never discarded.
+      if (prior && (prior.provenance === 'founder_import') !== (x.provenance === 'founder_import') && prior.email === x.email && prior.consent?.value === x.consent?.value) return 'duplicate_event';
       if (prior) {
         await t.sql`INSERT INTO intake_conflicts (id, org_id, source_submission_id, existing_record_id, payload_hash, provenance, receipt_id, received_at, status)
           VALUES (${newId('ic')}, ${t.orgId}, ${x.submissionId}, ${prior.id}, ${payloadHash}, ${x.provenance}, ${x.receiptId}, ${x.nowIso}, 'open') ON CONFLICT DO NOTHING`;
@@ -232,7 +235,8 @@ async function recordIntake(deps, x) {
     const ledgerId = newId('in');
     await t.sql`INSERT INTO pilot_intake_records (id, org_id, source_submission_id, payload_hash, source_timestamp, received_at, provenance, consent, technical_source, heard_from, participant_id, outcome, receipt_id, cohort)
       VALUES (${ledgerId}, ${t.orgId}, ${x.submissionId}, ${payloadHash}, ${x.sourceTs}, ${x.nowIso}, ${x.provenance}, ${asJson(x.consent)}::jsonb, ${x.source}, ${x.heardFrom}, ${pid}, ${outcome}, ${x.receiptId}, ${x.cohort})`;
-    if (!person?.withdrawn_at)
+    // A registration whose consent answer was "no" is recorded as intake but never joins a program.
+    if (!person?.withdrawn_at && x.consent?.value !== 'no')
       await t.sql`INSERT INTO cohort_memberships (org_id, participant_id, cohort, status, evidence_kind, evidence_ref, joined_at, recorded_by)
         VALUES (${t.orgId}, ${pid}, ${x.cohort}, 'active', ${x.provenance === 'founder_import' ? 'founder_import' : 'pilot_form'}, ${ledgerId}, ${x.sourceTs || x.nowIso}, ${x.actor})
         ON CONFLICT (org_id, participant_id, cohort) DO NOTHING`;
@@ -272,6 +276,8 @@ async function importParticipants(body, env) {
   const expected = count(body.expectedCount, 'Rows in the export', 10000);
   if (expected === null) throw new Invalid('Say how many rows the export has (0 if none)');
   if (!Array.isArray(body.records) || body.records.length > 200) throw new Invalid('Send up to 200 records');
+  // The consent version has to come from evidence (the archived form, a screenshot, the export itself), not memory.
+  const consentEvidence = source === 'app_identity_export' ? null : text(body.consentEvidence, 'Where the consent wording and version are evidenced', 300, { required: body.records.length > 0 });
   const rowsIn = body.records.map((r, i) => {
     const n = `Row ${i + 1}`;
     const email = normalizeEmail(r?.email);
@@ -286,7 +292,7 @@ async function importParticipants(body, env) {
     else {
       const value = oneOf(r.consent?.value, `${n} consent`, ['yes', 'no']);
       const version = text(r.consent?.version, `${n} consent version`, 80, { required: true });
-      consent = { purpose: 'pilot_email', value, version };
+      consent = { purpose: 'pilot_email', value, version, evidence: consentEvidence };
     }
     const submittedAt = r.submittedAt && !Number.isNaN(Date.parse(r.submittedAt)) ? new Date(r.submittedAt).toISOString() : null;
     const techSource = typeof r.source === 'string' && /^[\w-]{1,40}$/.test(r.source) ? r.source : null;
@@ -540,14 +546,16 @@ async function dashboard(env) {
   env.need('dashboard.view');
   const scopeAll = env.has('participants.view.all');
   const people = rows(await env.sql`SELECT p.id, p.first_name, p.created_at, p.is_test, p.withdrawn_at, p.household_key, p.account, p.account_verified, p.engagement, p.engagement_verified, p.communication, p.technical_source, p.reported_source, p.origin,
-      EXISTS (SELECT 1 FROM pilot_intake_records r WHERE r.participant_id = p.id AND r.cohort = 'pilot') AS pilot_evidence,
+      EXISTS (SELECT 1 FROM pilot_intake_records r WHERE r.participant_id = p.id AND r.cohort = 'pilot') AS pilot_intake,
+      EXISTS (SELECT 1 FROM pilot_intake_records r WHERE r.participant_id = p.id AND r.cohort = 'pilot' AND r.consent->>'value' = 'yes') AS pilot_evidence,
       EXISTS (SELECT 1 FROM cohort_memberships c WHERE c.participant_id = p.id AND c.cohort = 'beta' AND c.status = 'active') AS beta_member,
       EXISTS (SELECT 1 FROM cohort_memberships c WHERE c.participant_id = p.id AND c.cohort = 'pilot' AND c.status = 'active' AND c.evidence_kind = 'founder_record') AS pilot_by_record
     FROM participants p WHERE p.org_id = ${env.orgId} AND (${scopeAll} OR p.assigned_to = ${env.member.id}) ORDER BY p.created_at DESC LIMIT 5001`);
   const truncated = people.length > 5000;
   const all = people.slice(0, 5000);
   const counted = all.filter(p => p.is_test === false && !p.withdrawn_at);
-  const households = list => new Set(list.map(p => p.household_key ? `h:${p.household_key}` : `p:${p.id}`)).size;
+  // Households are only known where the founder recorded one; everyone else is reported as "household not recorded".
+  const households = list => ({ known: new Set(list.filter(p => p.household_key).map(p => p.household_key)).size, notRecorded: list.filter(p => !p.household_key).length });
   const fus = await listFollowups(env, { openOnly: true });
   const rels = await getRelationships(env);
   const outs = (await env.sql`SELECT count(*)::int AS n FROM outreach WHERE org_id = ${env.orgId}`)[0].n;
@@ -567,6 +575,7 @@ async function dashboard(env) {
   const regUnreviewed = all.filter(p => p.pilot_evidence && p.is_test === null && !p.withdrawn_at).length;
   const regWithdrawn = all.filter(p => p.pilot_evidence && p.withdrawn_at).length;
   const byRecordOnly = counted.filter(p => p.pilot_by_record && !p.pilot_evidence).length;
+  const noConsent = all.filter(p => p.pilot_intake && !p.pilot_evidence && !p.withdrawn_at).length;
   const verified = (f, values) => counted.filter(p => p[`${f}_verified`] && values.includes(p[f]));
   const reported = (f, values) => counted.filter(p => !p[`${f}_verified`] && values.includes(p[f])).length;
   const anyVerified = f => counted.some(p => p[`${f}_verified`]);
@@ -574,6 +583,7 @@ async function dashboard(env) {
     regUnreviewed && `${regUnreviewed} waiting for review`, regWithdrawn && `${regWithdrawn} withdrew`,
     byRecordOnly && `${byRecordOnly} added to the pilot by founder record without a form registration (not counted)`,
     openConflicts && `${openConflicts} held for conflict review`,
+    noConsent && `${noConsent} registered without consent to pilot emails (recorded, not counted)`,
     !backfill && 'registrations from before this workspace have not been reconciled yet, so this is not the full count',
   ].filter(Boolean);
   const regNote = `Registrations backed by a form submission or a reconciled import, reviewed and not tests.${notes.length ? ' ' + notes.join('; ') + '.' : ''}`;
@@ -598,6 +608,7 @@ async function dashboard(env) {
       metric('followups', 'Open follow-ups', fus.length, 'actual', `${fus.filter(f => f.dueDate && f.dueDate < today).length} overdue.`, 'Follow-up queue'),
       metric('approvals', scopeAll ? 'Waiting for your approval' : 'Sent back to you for changes', pendingApprovals, 'actual', scopeAll ? 'Items the team submitted for review.' : 'Items Dion asked you to change.', 'Approvals'),
       metric('relationships', 'Institutional relationships', rels.length, 'actual', 'Relationship-cultivation records. None of these is an approved partnership or agreement.', 'Relationships'),
+      ...(scopeAll ? [await (async () => { const o = await outboxHealth(env); return metric('emails', 'Team emails needing a look', o.uncertain + o.gave_up, o.uncertain + o.gave_up ? 'actual' : 'actual', `${o.uncertain} may or may not have been delivered (the mail server's answer was lost; not resent automatically). ${o.gave_up} could not be sent after 5 tries. ${o.waiting} waiting to send.`, 'Notifications outbox'); })()] : []),
       metric('outreach', 'Outreach sessions logged', outs, 'field_report', 'Self-reported by the team.', 'Outreach log'),
     ],
     // Breakdowns are of reviewed, non-withdrawn people. Sources and states here are as reported unless a metric above says verified.
@@ -609,6 +620,6 @@ async function dashboard(env) {
     breakdownBasis: 'reported',
     upcoming: rels.filter(r => r.nextActionDate && r.nextActionDate >= today && r.nextActionDate <= in14).map(r => ({ id: r.id, contactName: r.contactName, organization: r.organization, nextAction: r.nextAction, nextActionDate: r.nextActionDate })),
     dueFollowups: fus.filter(f => !f.dueDate || f.dueDate <= in14).slice(0, 10),
-    recentRegistrations: all.filter(p => p.pilot_evidence).slice(0, 5).map(p => ({ id: p.id, firstName: p.first_name, createdAt: p.created_at, technicalSource: p.technical_source })),
+    recentRegistrations: all.filter(p => p.pilot_intake).slice(0, 5).map(p => ({ id: p.id, firstName: p.first_name, createdAt: p.created_at, technicalSource: p.technical_source })),
   });
 }

@@ -134,29 +134,31 @@ export async function approvalRoutes(parts, method, body, env) {
       const decision = oneOf(body.decision, 'decision', ['approved', 'changes_requested']);
       const note = text(body.note, 'Note', 1000);
       if (decision === 'changes_requested' && !note) throw new Invalid('Say what needs to change');
-      // The founder decides on the digest they were shown; if it moved on, nothing is decided.
-      if (body.digest !== undefined && body.digest !== a0.digest) throw new Stale('This request was replaced. Reload to review the latest version.');
-      try {
-        await inTx(env, async t => {
-          const a = toApproval((await t.sql`SELECT a.*, '' AS submitted_by_name FROM approvals a WHERE a.id = ${a0.id} FOR UPDATE`)[0]);
-          if (a.status !== 'pending') throw new Invalid('This was already decided, withdrawn or replaced. Reload to see the latest.');
-          if (a.itemId) {
-            const cur = await currentItem(t, a.itemType, a.itemId);
-            const snap = cur && (a.itemType === 'offer' ? { ...cur.snapshot, offer: a.snapshot?.offer } : cur.snapshot);
-            if (!cur || !a.digest || digestOf(snap) !== a.digest || (cur.version ?? null) !== (a.itemVersion ?? null)) throw new Stale('This item changed after it was sent for review. Ask for it to be sent again.');
+      // The founder decides on the exact digest they were shown (required). If the item moved on,
+      // the request is marked replaced in the same transaction and nothing is decided.
+      if (typeof body.digest !== 'string' || !/^[a-f0-9]{64}$/.test(body.digest)) throw new Invalid('Reload and review the request again before deciding.');
+      if (body.digest !== a0.digest) throw new Stale('This request was replaced. Reload to review the latest version.');
+      const outcome = await inTx(env, async t => {
+        const a = toApproval((await t.sql`SELECT a.*, '' AS submitted_by_name FROM approvals a WHERE a.id = ${a0.id} FOR UPDATE`)[0]);
+        if (a.status !== 'pending') throw new Invalid('This was already decided, withdrawn or replaced. Reload to see the latest.');
+        if (a.itemId) {
+          const cur = await currentItem(t, a.itemType, a.itemId);
+          const snap = cur && (a.itemType === 'offer' ? { ...cur.snapshot, offer: a.snapshot?.offer } : cur.snapshot);
+          if (!cur || !a.digest || digestOf(snap) !== a.digest || (cur.version ?? null) !== (a.itemVersion ?? null)) {
+            await t.sql`UPDATE approvals SET status = 'superseded', decided_at = ${iso(t.now())}, decision_note = 'Changed after it was sent for review' WHERE id = ${a.id}`;
+            await t.audit('approval.superseded', a.id);
+            return 'stale';
           }
-          await barrier(t, 'approval.decide.checked');
-          await t.sql`UPDATE approvals SET status = ${decision}, decided_by = ${me.id}, decided_at = ${iso(t.now())}, decision_note = ${note} WHERE id = ${a.id}`;
-          await applyDecision(t, a, decision, body);
-          await t.audit(`approval.${decision}`, a.id, { itemType: a.itemType, digest: a.digest });
-          const submitter = await memberById(t, a.submittedBy);
-          if (submitter && submitter.id !== me.id) await enqueue(t, submitter, decision === 'approved' ? `Approved: ${a.title}` : `Changes requested: ${a.title}`, `${me.name} ${decision === 'approved' ? 'approved' : 'asked for changes to'} "${a.title}".${note ? `\n\nNote: ${note}` : ''}\n\nSee it here: ${t.origin}/operations/#/approvals`);
-        });
-      } catch (e) {
-        // A stale request is marked replaced (in its own transaction) so it leaves the inbox.
-        if (e.stale) await inTx(env, async t => { await t.sql`UPDATE approvals SET status = 'superseded', decided_at = ${iso(t.now())}, decision_note = 'Changed after it was sent for review' WHERE id = ${a0.id} AND status = 'pending'`; await t.audit('approval.superseded', a0.id); });
-        throw e;
-      }
+        }
+        await barrier(t, 'approval.decide.checked');
+        await t.sql`UPDATE approvals SET status = ${decision}, decided_by = ${me.id}, decided_at = ${iso(t.now())}, decision_note = ${note} WHERE id = ${a.id}`;
+        await applyDecision(t, a, decision, body);
+        await t.audit(`approval.${decision}`, a.id, { itemType: a.itemType, digest: a.digest });
+        const submitter = await memberById(t, a.submittedBy);
+        if (submitter && submitter.id !== me.id) await enqueue(t, submitter, decision === 'approved' ? `Approved: ${a.title}` : `Changes requested: ${a.title}`, `${me.name} ${decision === 'approved' ? 'approved' : 'asked for changes to'} "${a.title}".${note ? `\n\nNote: ${note}` : ''}\n\nSee it here: ${t.origin}/operations/#/approvals`);
+        return 'decided';
+      });
+      if (outcome === 'stale') return json({ error: { code: 'stale', message: 'This item changed after it was sent for review. Ask for it to be sent again.' } }, 409);
       return json({ approval: toApproval((await SELECT_ONE(env.sql, a0.id))[0]) });
     }
     if (method === 'POST' && parts[1] === 'withdraw') {

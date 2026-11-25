@@ -131,7 +131,7 @@ async function viewDashboard() {
   layout('dashboard',
     h('h1', {}, 'Today'), h('p', { class: 'sub' }, d.scope === 'all' ? 'All pilot records.' : 'Your assigned participants and the shared outreach records.'),
     d.coverage === 'incomplete' ? h('div', { class: 'notice warn' }, 'Counts are incomplete until earlier sign-ups are imported and reconciled with their exports.') : null,
-    h('div', { class: 'grid' }, d.metrics.map(m => h('div', { class: 'card kpi' }, h('span', { class: 'tag ' + m.status }, L(m.status)), h('div', { class: 'v' }, m.value === null ? 'Unknown' : m.value), h('div', { class: 'l' }, m.label), m.households !== undefined ? h('p', {}, `${m.households} household${m.households === 1 ? '' : 's'}`) : null, h('p', {}, m.definition), h('p', {}, 'Source: ' + m.source)))),
+    h('div', { class: 'grid' }, d.metrics.map(m => h('div', { class: 'card kpi' }, h('span', { class: 'tag ' + m.status }, L(m.status)), h('div', { class: 'v' }, m.value === null ? 'Unknown' : m.value), h('div', { class: 'l' }, m.label), m.households ? h('p', {}, `${m.households.known} known household${m.households.known === 1 ? '' : 's'}${m.households.notRecorded ? ` · ${m.households.notRecorded} with household not recorded` : ''}`) : null, h('p', {}, m.definition), h('p', {}, 'Source: ' + m.source)))),
     h('h2', {}, 'Follow-ups due in the next 2 weeks'),
     d.dueFollowups.length ? h('ul', {}, d.dueFollowups.map(f => h('li', {}, f.title, ' — ', h('span', { class: 'muted' }, f.dueDate ? fmtDate(f.dueDate) : 'no date')))) : h('p', { class: 'muted' }, 'Nothing due. ', h('a', { href: '#/followups' }, 'Add a follow-up')),
     h('h2', {}, 'Upcoming conversations'),
@@ -177,7 +177,7 @@ function importPanel() {
       const [firstName, email, sourceSubmissionId, source, submittedAt, consentValue] = l.split(',').map(x => (x || '').trim());
       return { firstName, email, sourceSubmissionId: sourceSubmissionId || undefined, source: source || undefined, submittedAt: submittedAt || undefined, consent: b.source === 'app_identity_export' ? undefined : { value: consentValue || 'yes', version: b.consentVersion } };
     });
-    const r = await api('POST', 'participants/import', { source: b.source, exportRef: b.exportRef, exportSha256: b.exportSha256 || undefined, exportedAt: b.exportedAt, expectedCount: b.expectedCount, records });
+    const r = await api('POST', 'participants/import', { consentEvidence: b.consentEvidence || undefined, source: b.source, exportRef: b.exportRef, exportSha256: b.exportSha256 || undefined, exportedAt: b.exportedAt, expectedCount: b.expectedCount, records });
     toast(`Imported: ${r.created} new, ${r.linked} matched, ${r.alreadyImported} already imported, ${r.conflicts} held. ${r.reconciled ? 'Reconciled with the export.' : 'Does NOT reconcile with the export.'}`);
     viewParticipants();
   }); } },
@@ -185,6 +185,7 @@ function importPanel() {
     h('div', { class: 'row' }, h('label', {}, 'Export file name or id', h('input', { name: 'exportRef', required: true, maxlength: 200 })), h('label', {}, 'Date you exported it', h('input', { name: 'exportedAt', type: 'date', required: true })), h('label', {}, 'Rows in the export', h('span', { class: 'hint' }, 'All of them, 0 if none'), h('input', { name: 'expectedCount', type: 'number', min: 0, required: true }))),
     h('label', {}, 'Export checksum (SHA-256, optional)', h('input', { name: 'exportSha256', maxlength: 64, pattern: '[a-f0-9]{64}' })),
     h('label', {}, 'Consent version shown on the form at the time', h('span', { class: 'hint' }, 'For form exports and your own records. Not needed for app account exports.'), h('input', { name: 'consentVersion', maxlength: 80, placeholder: 'e.g. pilot-form Nov 2026' })),
+    h('label', {}, 'Where the consent wording and version are evidenced', h('span', { class: 'hint' }, 'e.g. archived form page or screenshot in Drive. Not needed for app account exports.'), h('input', { name: 'consentEvidence', maxlength: 300 })),
     h('label', {}, 'One person per line: first name, email, form submission id (or app account id), link source, submitted date, consent (yes/no)', h('textarea', { name: 'rows', placeholder: 'Jordan, jordan@example.com, 6740a1b2c3, direct, 2026-11-12, yes' })),
     h('button', { class: 'btn', type: 'submit' }, 'Import'));
   return h('details', {}, h('summary', {}, 'Import earlier sign-ups or beta testers'), h('p', { class: 'muted' }, 'Each import is checked against how many rows the export has. Imported people are "not reviewed" until you confirm they are real. The same submission id with different details is held for your review.'), f);
@@ -540,7 +541,7 @@ async function viewContent() {
     h('div', { class: 'row' }, h('span', { class: 'tag ' + (p.status === 'approved' || p.status === 'published' ? 'approved' : ['in_review', 'changes_requested'].includes(p.status) ? 'pending' : '') }, L(p.status)), h('span', { class: 'tag' }, L(p.channel)), h('span', { class: 'tag' }, p.plannedDate ? fmtDate(p.plannedDate) : 'No date')),
     h('p', { class: 'pre' }, p.caption || h('span', { class: 'muted' }, 'No caption yet')),
     h('p', { class: 'muted' }, 'Link: ', p.refLink, p.assetTitle ? ` · Graphic: ${p.assetTitle}` : ''),
-    p.publishedUrl ? h('p', {}, h('a', { href: p.publishedUrl, target: '_blank', rel: 'noopener noreferrer' }, 'View the live post')) : null,
+    p.publishedUrl ? h('p', {}, h('a', { href: p.publishedUrl, target: '_blank', rel: 'noopener noreferrer' }, 'View the live post'), h('span', { class: 'muted' }, ' (link given by the team, not checked)')) : p.status === 'published' ? h('p', { class: 'muted' }, 'Marked as posted by the team (no link given).') : null,
     h('p', { class: 'muted' }, `By ${p.createdByName || 'team'}`), actions(p));
   layout('content', h('h1', {}, 'Social calendar'), h('p', { class: 'sub' }, 'Draft posts here. Every post gets Dion\'s OK before it goes live; then post it from the SpinFamily account and mark it posted.'),
     h('details', { open: !d.posts.length }, h('summary', {}, 'New post'), form),
