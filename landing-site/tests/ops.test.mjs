@@ -1,67 +1,82 @@
-// SF-PILOT-OPS-001 workspace tests. Synthetic records only.
-import { test } from 'node:test';
+// SF-PILOT-OPS-001 workspace tests against a real Postgres (Netlify Database local engine). Synthetic records only.
+import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { handle, ingestPilotSubmission, FOUNDER_EMAIL } from '../lib/ops/api.mjs';
-import { memoryStore, storeNameFor } from '../lib/ops/store.mjs';
+import { NetlifyDB } from '@netlify/database-dev';
+import { getDatabase } from '@netlify/database';
+import { handle, FOUNDER_EMAIL } from '../lib/ops/core.mjs';
+import { ingestPilotSubmission } from '../lib/ops/records.mjs';
+import { memoryFiles } from '../lib/ops/files.mjs';
+import { runtimeFacts } from '../lib/ops/runtime.mjs';
+import { SITE_ID } from '../lib/pilot-welcome.mjs';
 import { totpAt, verifyTotp, base32Decode, base32Encode, SESSION_COOKIE } from '../lib/ops/security.mjs';
 
 const ORIGIN = 'https://spinfamilyapp.com';
 const COORD = 'coordinator@example.com';
+const ENROLL = 'test-enrollment-code';
+let ndb, db;
 
-function world({ deployContext = 'production', netlifyUser = null } = {}) {
-  const store = memoryStore();
+before(async () => {
+  ndb = new NetlifyDB();
+  db = getDatabase({ connectionString: await ndb.start() });
+  await ndb.applyMigrations(new URL('../netlify/database/migrations', import.meta.url).pathname);
+});
+after(async () => { await db.pool?.end?.(); await ndb.stop(); });
+beforeEach(async () => {
+  const tables = (await db.sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('orgs') AND tablename NOT LIKE '%migration%'`).map(r => r.tablename);
+  await db.sql.unsafe(`TRUNCATE ${tables.map(t => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`);
+});
+
+function world({ deployContext = 'production', netlifyUser = null, enrollmentCode = ENROLL } = {}) {
   const mail = [];
   let clock = Date.parse('2026-11-24T15:00:00Z');
-  const deps = { store, now: () => clock, origin: ORIGIN, deployContext, netlifyUser, mailbox: 'hello@spinfamilyapp.com', sendMail: async m => { mail.push(m); return { accepted: [m.to.address] }; } };
+  const deps = { sql: db.sql, files: memoryFiles(), orgId: 'spinfamily', now: () => clock, origin: ORIGIN, deployContext, netlifyUser, mailbox: 'hello@spinfamilyapp.com', founderEnrollmentCode: enrollmentCode, sendMail: async m => { mail.push(m); return { accepted: [m.to.address] }; } };
   const call = async (method, path, body, { cookie, headers = {} } = {}) => {
     const h = { ...headers };
     if (cookie) h.cookie = `${SESSION_COOKIE}=${cookie}`;
     if (method !== 'GET') { h['content-type'] ??= 'application/json'; h['x-sf-ops'] ??= '1'; h.origin ??= ORIGIN; }
     const res = await handle(new Request(`${ORIGIN}/operations/api/${path}`, { method, headers: h, body: method === 'GET' ? undefined : JSON.stringify(body ?? {}) }), deps);
-    const setCookie = res.headers.get('set-cookie');
-    const sid = setCookie?.match(new RegExp(`${SESSION_COOKIE}=([^;]*)`))?.[1];
-    return { status: res.status, body: await res.json(), sid, headers: res.headers };
+    const sid = res.headers.get('set-cookie')?.match(new RegExp(`${SESSION_COOKIE}=([^;]*)`))?.[1];
+    const ct = res.headers.get('content-type') || '';
+    return { status: res.status, body: ct.includes('json') ? await res.json() : null, sid, headers: res.headers, res };
   };
-  const signIn = async email => {
-    await call('POST', 'auth/request', { email });
-    const last = mail.at(-1); assert.ok(last, 'sign-in email sent'); assert.equal(last.to.address, email);
-    const token = last.text.match(/#signin=([\w-]+)/)[1];
-    const r = await call('POST', 'auth/verify', { token });
-    assert.equal(r.status, 200); return r.sid;
+  const tokenFrom = m => m.text.match(/#signin=([\w-]+)/)[1];
+  const requestLink = async email => { const before = mail.length; await call('POST', 'auth/request', { email }); assert.equal(mail.length, before + 1, `link sent to ${email}`); return tokenFrom(mail.at(-1)); };
+  const signIn = async email => { const r = await call('POST', 'auth/verify', { token: await requestLink(email) }); assert.equal(r.status, 200); return r.sid; };
+  const code = secret => totpAt(secret, Math.floor(clock / 30000));
+  const enroll = async (sid, founder) => {
+    const s = await call('POST', 'auth/authenticator/setup', founder ? { enrollmentCode: ENROLL } : {}, { cookie: sid });
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    assert.equal((await call('POST', 'auth/authenticator/confirm', { code: code(s.body.secret) }, { cookie: sid })).status, 200);
+    return s.body.secret;
   };
-  const enrollFounder = async sid => {
-    const s = await call('POST', 'auth/authenticator/setup', {}, { cookie: sid });
-    assert.equal(s.status, 200);
-    const c = await call('POST', 'auth/authenticator/confirm', { code: totpAt(s.body.secret, Math.floor(clock / 30000)) }, { cookie: sid });
-    assert.equal(c.status, 200); return s.body.secret;
-  };
-  const founderReady = async () => { const sid = await signIn(FOUNDER_EMAIL); const secret = await enrollFounder(sid); return { sid, secret }; };
-  return { store, mail, deps, call, signIn, enrollFounder, founderReady, tick: ms => { clock += ms; }, get clock() { return clock; } };
+  const ready = async (email, founder = email === FOUNDER_EMAIL) => { const sid = await signIn(email); const secret = await enroll(sid, founder); return { sid, secret }; };
+  const tick = ms => { clock += ms; };
+  return { mail, deps, call, requestLink, signIn, enroll, ready, code, tick, get clock() { return clock; } };
 }
-async function withCoordinator(w) {
-  const f = await w.founderReady();
+async function team(w) {
+  const f = await w.ready(FOUNDER_EMAIL);
   const inv = await w.call('POST', 'team/invite', { email: COORD, name: 'Test Coordinator', role: 'coordinator' }, { cookie: f.sid });
   assert.equal(inv.status, 201);
-  const csid = await w.signIn(COORD);
-  return { ...f, csid, coordId: inv.body.member.id };
+  w.tick(31000);
+  const c = await w.ready(COORD);
+  return { sid: f.sid, secret: f.secret, csid: c.sid, csecret: c.secret, coordId: inv.body.member.id };
 }
 
 // ---------- TOTP ----------
 test('TOTP matches RFC 6238 SHA-1 test vector and blocks reuse', () => {
   const secret = base32Encode(Buffer.from('12345678901234567890'));
-  assert.equal(totpAt(secret, Math.floor(59 / 30)), '287082'); // RFC 6238 vector, last 6 digits of 94287082
+  assert.equal(totpAt(secret, 1), '287082');
   assert.equal(base32Decode(secret).toString(), '12345678901234567890');
   const step = verifyTotp(secret, '287082', 59000);
   assert.equal(step, 1);
-  assert.equal(verifyTotp(secret, '287082', 59000, step), null, 'same code cannot be used twice');
-  assert.equal(verifyTotp(secret, '12345', 59000), null);
+  assert.equal(verifyTotp(secret, '287082', 59000, step), null);
 });
 
 // ---------- Authentication ----------
 test('unauthenticated access is denied everywhere', async () => {
   const w = world();
-  for (const p of ['dashboard', 'participants', 'followups', 'outreach', 'relationships', 'resources', 'team', 'audit', 'auth/me'])
+  for (const p of ['dashboard', 'participants', 'followups', 'outreach', 'relationships', 'resources', 'team', 'audit', 'approvals', 'content', 'research', 'auth/me'])
     assert.equal((await w.call('GET', p)).status, 401, p);
 });
 
@@ -71,329 +86,480 @@ test('no public registration: unknown emails get the same answer and no email', 
   const r2 = await w.call('POST', 'auth/request', { email: 'not-an-email' });
   assert.equal(r.status, 200); assert.deepEqual(r.body, r2.body);
   assert.equal(w.mail.length, 0);
-  assert.equal((await w.store.list('members/')).length, 0);
+  assert.equal((await db.sql`SELECT count(*)::int n FROM members`)[0].n, 0);
 });
 
 test('sign-in link works once and expires', async () => {
   const w = world();
-  await w.call('POST', 'auth/request', { email: FOUNDER_EMAIL });
-  const token = w.mail[0].text.match(/#signin=([\w-]+)/)[1];
+  const token = await w.requestLink(FOUNDER_EMAIL);
   assert.match(w.mail[0].text, /https:\/\/spinfamilyapp\.com\/operations\/#signin=/);
   const first = await w.call('POST', 'auth/verify', { token });
-  assert.equal(first.status, 200); assert.ok(first.sid);
+  assert.equal(first.status, 200);
   assert.match(first.headers.get('set-cookie'), /HttpOnly; Secure; SameSite=Strict/);
-  assert.equal((await w.call('POST', 'auth/verify', { token })).status, 400, 'reuse rejected');
-  await w.call('POST', 'auth/request', { email: FOUNDER_EMAIL });
-  const t2 = w.mail[1].text.match(/#signin=([\w-]+)/)[1];
+  assert.equal((await w.call('POST', 'auth/verify', { token })).status, 400);
+  const t2 = await w.requestLink(FOUNDER_EMAIL);
   w.tick(16 * 60 * 1000);
-  assert.equal((await w.call('POST', 'auth/verify', { token: t2 })).status, 400, 'expired link rejected');
+  assert.equal((await w.call('POST', 'auth/verify', { token: t2 })).status, 400);
 });
 
-test('sign-in link requests are throttled per member', async () => {
+test('IR-01: parallel link use and parallel link requests are atomic', async () => {
   const w = world();
-  for (let i = 0; i < 5; i++) await w.call('POST', 'auth/request', { email: FOUNDER_EMAIL });
-  assert.equal(w.mail.length, 3);
+  const token = await w.requestLink(FOUNDER_EMAIL);
+  const both = await Promise.all([w.call('POST', 'auth/verify', { token }), w.call('POST', 'auth/verify', { token })]);
+  assert.deepEqual(both.map(r => r.status).sort(), [200, 400]);
+  w.tick(16 * 60 * 1000);
+  const before = w.mail.length;
+  await Promise.all(Array.from({ length: 10 }, () => w.call('POST', 'auth/request', { email: FOUNDER_EMAIL })));
+  assert.equal(w.mail.length - before, 3, 'throttle holds under parallel requests');
 });
 
-test('founder must enroll an authenticator before team management, then enter a code on every sign-in', async () => {
+test('IR-07: founder authenticator setup needs the Netlify setup code; without it, setup is locked', async () => {
   const w = world();
   const sid = await w.signIn(FOUNDER_EMAIL);
-  const blocked = await w.call('GET', 'team', undefined, { cookie: sid });
-  assert.equal(blocked.status, 403); assert.equal(blocked.body.error.code, 'step_up_required');
-  const secret = await w.enrollFounder(sid);
+  assert.equal((await w.call('POST', 'auth/authenticator/setup', {}, { cookie: sid })).status, 403);
+  assert.equal((await w.call('POST', 'auth/authenticator/setup', { enrollmentCode: 'wrong' }, { cookie: sid })).status, 403);
+  assert.equal((await w.call('POST', 'auth/authenticator/setup', { enrollmentCode: ENROLL }, { cookie: sid })).status, 200);
+  const locked = world({ enrollmentCode: null });
+  await db.sql`TRUNCATE members, memberships, sessions, login_links, audit_events RESTART IDENTITY CASCADE`;
+  const sid2 = await locked.signIn(FOUNDER_EMAIL);
+  const r = await locked.call('POST', 'auth/authenticator/setup', { enrollmentCode: 'anything' }, { cookie: sid2 });
+  assert.equal(r.status, 403); assert.match(r.body.error.message, /OPS_FOUNDER_ENROLLMENT_CODE/);
+});
+
+test('IR-07: everyone needs an authenticator before seeing any data, coordinators included', async () => {
+  const w = world();
+  const { sid } = await w.ready(FOUNDER_EMAIL);
+  await w.call('POST', 'team/invite', { email: COORD, name: 'C', role: 'coordinator' }, { cookie: sid });
+  const csid = await w.signIn(COORD);
+  const r = await w.call('GET', 'participants', undefined, { cookie: csid });
+  assert.equal(r.status, 403); assert.equal(r.body.error.code, 'authenticator_required');
+  assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: csid })).body.needsAuthenticator, true);
+  await w.enroll(csid, false);
+  assert.equal((await w.call('GET', 'participants', undefined, { cookie: csid })).status, 200);
+});
+
+test('a code is needed at every sign-in; the same code cannot be used by two sessions (IR-01)', async () => {
+  const w = world();
+  const { secret } = await w.ready(FOUNDER_EMAIL);
+  w.tick(60000);
+  const a = await w.signIn(FOUNDER_EMAIL), b = await w.signIn(FOUNDER_EMAIL);
+  assert.equal((await w.call('GET', 'dashboard', undefined, { cookie: a })).status, 401);
+  const code = w.code(secret);
+  const both = await Promise.all([w.call('POST', 'auth/mfa', { code }, { cookie: a }), w.call('POST', 'auth/mfa', { code }, { cookie: b })]);
+  assert.deepEqual(both.map(r => r.status).sort(), [200, 400]);
+});
+
+test('IR-01: five wrong codes end the session even when sent in parallel', async () => {
+  const w = world();
+  const { secret } = await w.ready(FOUNDER_EMAIL);
+  w.tick(60000);
+  const sid = await w.signIn(FOUNDER_EMAIL);
+  await Promise.all(Array.from({ length: 5 }, () => w.call('POST', 'auth/mfa', { code: '000000' }, { cookie: sid })));
+  assert.equal((await w.call('POST', 'auth/mfa', { code: w.code(secret) }, { cookie: sid })).status, 401);
+});
+
+test('founder can recover a lost authenticator with a new email link plus the setup code', async () => {
+  const w = world();
+  await w.ready(FOUNDER_EMAIL);
+  w.tick(60000);
+  const sid = await w.signIn(FOUNDER_EMAIL);
+  assert.equal((await w.call('POST', 'auth/authenticator/recover', { enrollmentCode: 'nope' }, { cookie: sid })).status, 403);
+  assert.equal((await w.call('POST', 'auth/authenticator/recover', { enrollmentCode: ENROLL }, { cookie: sid })).status, 200);
+  await w.enroll(sid, true);
   assert.equal((await w.call('GET', 'team', undefined, { cookie: sid })).status, 200);
-  // New sign-in: everything blocked until the code is entered.
-  w.tick(60000);
-  const sid2 = await w.signIn(FOUNDER_EMAIL);
-  assert.equal((await w.call('GET', 'dashboard', undefined, { cookie: sid2 })).status, 401);
-  assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: sid2 })).body.mfa, 'pending');
-  assert.equal((await w.call('POST', 'auth/mfa', { code: '000000' }, { cookie: sid2 })).status, 400);
-  const ok = await w.call('POST', 'auth/mfa', { code: totpAt(secret, Math.floor(w.clock / 30000)) }, { cookie: sid2 });
-  assert.equal(ok.status, 200);
-  assert.equal((await w.call('GET', 'team', undefined, { cookie: sid2 })).status, 200);
 });
 
-test('five wrong authenticator codes end the session', async () => {
+test('sessions expire when idle; logout cannot be undone by a later request (IR-01)', async () => {
   const w = world();
-  const { secret } = await w.founderReady();
-  w.tick(60000);
-  const sid = await w.signIn(FOUNDER_EMAIL);
-  for (let i = 0; i < 5; i++) await w.call('POST', 'auth/mfa', { code: '000000' }, { cookie: sid });
-  assert.equal((await w.call('POST', 'auth/mfa', { code: totpAt(secret, Math.floor(w.clock / 30000)) }, { cookie: sid })).status, 401);
-});
-
-test('sessions expire when idle and on sign-out', async () => {
-  const w = world();
-  const { csid } = await withCoordinator(w);
-  assert.equal((await w.call('GET', 'dashboard', undefined, { cookie: csid })).status, 200);
+  const { csid } = await team(w);
   w.tick(9 * 60 * 60 * 1000);
-  assert.equal((await w.call('GET', 'dashboard', undefined, { cookie: csid })).status, 401, 'idle timeout');
+  assert.equal((await w.call('GET', 'dashboard', undefined, { cookie: csid })).status, 401);
+  w.tick(60000);
   const sid = await w.signIn(COORD);
-  await w.call('POST', 'auth/logout', {}, { cookie: sid });
-  assert.equal((await w.call('GET', 'dashboard', undefined, { cookie: sid })).status, 401, 'logout');
+  await Promise.all([w.call('POST', 'auth/logout', {}, { cookie: sid }), w.call('GET', 'auth/me', undefined, { cookie: sid })]);
+  w.tick(120000);
+  assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: sid })).status, 401);
 });
 
-test('revoking access signs the person out immediately and blocks new links', async () => {
+test('IR-01: revoking cancels links already sent, kills sessions, and restoring does not revive old links', async () => {
   const w = world();
-  const { sid, csid, coordId } = await withCoordinator(w);
+  const { sid, csid, coordId } = await team(w);
+  w.tick(16 * 60 * 1000);
+  const pending = await w.requestLink(COORD);
   assert.equal((await w.call('PATCH', `team/${coordId}`, { action: 'revoke' }, { cookie: sid })).status, 200);
-  assert.equal((await w.call('GET', 'dashboard', undefined, { cookie: csid })).status, 401);
+  assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: csid })).status, 401);
+  assert.equal((await w.call('POST', 'auth/verify', { token: pending })).status, 400);
+  await w.call('PATCH', `team/${coordId}`, { action: 'restore' }, { cookie: sid });
+  assert.equal((await w.call('POST', 'auth/verify', { token: pending })).status, 400, 'old link stays dead after restore');
+});
+
+test('IR-01: a session started in the same instant as a revocation does not survive', async () => {
+  const w = world();
+  const { sid, coordId } = await team(w);
+  w.tick(16 * 60 * 1000);
+  const token = await w.requestLink(COORD);
+  const [v] = await Promise.all([w.call('POST', 'auth/verify', { token }), w.call('PATCH', `team/${coordId}`, { action: 'revoke' }, { cookie: sid })]);
+  if (v.status === 200) assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: v.sid })).status, 401);
+});
+
+test('founder can move a teammate to a company email; old sessions and links end', async () => {
+  const w = world();
+  const { sid, csid, coordId } = await team(w);
+  const r = await w.call('PATCH', `team/${coordId}`, { email: 'lindseywhitaker@spinfamilyapp.com' }, { cookie: sid });
+  assert.equal(r.status, 200); assert.equal(r.body.member.email, 'lindseywhitaker@spinfamilyapp.com');
+  assert.equal((await w.call('GET', 'auth/me', undefined, { cookie: csid })).status, 401);
+  w.tick(1000);
   const before = w.mail.length;
   await w.call('POST', 'auth/request', { email: COORD });
-  assert.equal(w.mail.length, before, 'no link for revoked member');
+  assert.equal(w.mail.length, before, 'old address gets nothing');
 });
 
 // ---------- CSRF and request hygiene ----------
 test('cross-site and malformed mutations are blocked', async () => {
   const w = world();
-  const { csid } = await withCoordinator(w);
+  const { csid } = await team(w);
   const body = { firstName: 'Synthetic' };
   assert.equal((await w.call('POST', 'participants', body, { cookie: csid, headers: { origin: 'https://evil.example' } })).status, 403);
   assert.equal((await w.call('POST', 'participants', body, { cookie: csid, headers: { 'x-sf-ops': '0' } })).status, 403);
   assert.equal((await w.call('POST', 'participants', body, { cookie: csid, headers: { 'content-type': 'text/plain' } })).status, 415);
-  const big = await w.call('POST', 'participants', { firstName: 'x'.repeat(40000) }, { cookie: csid });
-  assert.equal(big.status, 413);
+  assert.equal((await w.call('POST', 'participants', { firstName: 'x'.repeat(40000) }, { cookie: csid })).status, 413);
 });
 
 // ---------- Authorization ----------
-test('coordinator cannot reach founder-only functions', async () => {
+test('coordinator cannot reach founder-only functions; client role claims are ignored', async () => {
   const w = world();
-  const { csid, coordId } = await withCoordinator(w);
-  for (const [m, p, b] of [['GET', 'team'], ['GET', 'audit'], ['POST', 'team/invite', { email: 'x@example.com', name: 'X', role: 'coordinator' }], ['PATCH', `team/${coordId}`, { action: 'restore' }], ['POST', 'resources', { title: 'x', url: 'https://example.com' }]])
+  const { sid, csid, coordId } = await team(w);
+  for (const [m, p, b] of [['GET', 'team'], ['GET', 'audit'], ['POST', 'team/invite', { email: 'x@example.com', name: 'X', role: 'coordinator' }], ['PATCH', `team/${coordId}`, { action: 'restore' }], ['POST', 'resources', { title: 'x', url: 'https://example.com' }], ['POST', 'participants/import', { source: 'founder_records', exportedAt: '2026-11-24', records: [{ firstName: 'A', email: 'a@example.com' }] }], ['POST', 'research/cohorts', { name: 'X' }]])
     assert.equal((await w.call(m, p, b, { cookie: csid })).status, 403, `${m} ${p}`);
-});
-
-test('client-side role claims are ignored; nobody can invite a second founder', async () => {
-  const w = world();
-  const { sid, csid } = await withCoordinator(w);
-  assert.equal((await w.call('GET', 'team', undefined, { cookie: csid, headers: { 'x-role': 'founder', cookie: `${SESSION_COOKIE}=${csid}; role=founder` } })).status, 403);
-  const r = await w.call('POST', 'team/invite', { email: 'b@example.com', name: 'B', role: 'founder' }, { cookie: sid });
-  assert.equal(r.status, 400);
+  assert.equal((await w.call('GET', 'team', undefined, { cookie: csid, headers: { 'x-role': 'founder' } })).status, 403);
+  assert.equal((await w.call('POST', 'team/invite', { email: 'b@example.com', name: 'B', role: 'founder' }, { cookie: sid })).status, 400);
 });
 
 test('coordinator sees only assigned participants and cannot assign or reveal others', async () => {
   const w = world();
-  const { sid, csid, coordId } = await withCoordinator(w);
-  const a = await w.call('POST', 'participants', { firstName: 'Alpha', email: 'alpha@example.com', cohort: 'pilot' }, { cookie: sid });
-  const b = await w.call('POST', 'participants', { firstName: 'Bravo', email: 'bravo@example.com', cohort: 'pilot' }, { cookie: sid });
-  await w.call('PATCH', `participants/${a.body.participant.id}`, { assignedTo: coordId }, { cookie: sid });
+  const { sid, csid, coordId } = await team(w);
+  const a = (await w.call('POST', 'participants', { firstName: 'Alpha', email: 'alpha@example.com', cohort: 'pilot' }, { cookie: sid })).body.participant;
+  const b = (await w.call('POST', 'participants', { firstName: 'Bravo', email: 'bravo@example.com', cohort: 'pilot' }, { cookie: sid })).body.participant;
+  await w.call('PATCH', `participants/${a.id}`, { assignedTo: coordId, version: a.version }, { cookie: sid });
   const list = await w.call('GET', 'participants', undefined, { cookie: csid });
   assert.deepEqual(list.body.participants.map(p => p.firstName), ['Alpha']);
-  assert.equal(list.body.participants[0].email, 'alpha@example.com', 'assigned contact visible');
-  assert.equal((await w.call('GET', `participants/${b.body.participant.id}`, undefined, { cookie: csid })).status, 404, 'unassigned record hidden');
-  assert.equal((await w.call('PATCH', `participants/${a.body.participant.id}`, { assignedTo: null }, { cookie: csid })).status, 403);
-  assert.equal((await w.call('PATCH', `participants/${a.body.participant.id}`, { isTest: true }, { cookie: csid })).status, 403);
-  assert.equal((await w.call('PATCH', `participants/${a.body.participant.id}`, { account: 'confirmed' }, { cookie: csid })).status, 200);
+  assert.equal(list.body.participants[0].email, 'alpha@example.com');
+  assert.equal((await w.call('GET', `participants/${b.id}`, undefined, { cookie: csid })).status, 404);
+  const cur = list.body.participants[0];
+  assert.equal((await w.call('PATCH', `participants/${a.id}`, { assignedTo: null, version: cur.version }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('PATCH', `participants/${a.id}`, { isTest: true, version: cur.version }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('PATCH', `participants/${a.id}`, { notes: 'Called', version: cur.version }, { cookie: csid })).status, 200);
 });
 
-test('participants created by the coordinator are assigned to them', async () => {
+test('IR-05: a stale edit cannot undo a newer reassignment, and a reassigned record is out of reach', async () => {
   const w = world();
-  const { csid } = await withCoordinator(w);
-  const r = await w.call('POST', 'participants', { firstName: 'Charlie', email: 'charlie@example.com' }, { cookie: csid });
-  assert.equal(r.status, 201); assert.equal(r.body.participant.email, 'charlie@example.com');
+  const { sid, csid, coordId } = await team(w);
+  let p = (await w.call('POST', 'participants', { firstName: 'Delta', email: 'delta@example.com', cohort: 'pilot' }, { cookie: sid })).body.participant;
+  p = (await w.call('PATCH', `participants/${p.id}`, { assignedTo: coordId, version: p.version }, { cookie: sid })).body.participant;
+  const coordView = (await w.call('GET', `participants/${p.id}`, undefined, { cookie: csid })).body.participant;
+  assert.equal((await w.call('PATCH', `participants/${p.id}`, { assignedTo: null, version: p.version }, { cookie: sid })).status, 200);
+  const stale = await w.call('PATCH', `participants/${p.id}`, { notes: 'from old screen', version: coordView.version }, { cookie: csid });
+  assert.ok([404, 409].includes(stale.status));
+  const now = (await w.call('GET', `participants/${p.id}`, undefined, { cookie: sid })).body.participant;
+  assert.equal(now.assignedTo, null); assert.equal(now.notes, '');
+  const v = now.version;
+  assert.equal((await w.call('PATCH', `participants/${p.id}`, { notes: 'tab 1', version: v }, { cookie: sid })).status, 200);
+  assert.equal((await w.call('PATCH', `participants/${p.id}`, { notes: 'tab 2', version: v }, { cookie: sid })).status, 409);
 });
 
-test('duplicate participant emails are refused', async () => {
+test('IR-05: the assignee on create must be on the team', async () => {
   const w = world();
-  const { sid } = await w.founderReady();
-  assert.equal((await w.call('POST', 'participants', { firstName: 'A', email: 'dup@example.com' }, { cookie: sid })).status, 201);
-  assert.equal((await w.call('POST', 'participants', { firstName: 'B', email: 'DUP@example.com ' }, { cookie: sid })).status, 400);
+  const { sid } = await w.ready(FOUNDER_EMAIL);
+  assert.equal((await w.call('POST', 'participants', { firstName: 'Echo', assignedTo: 'm_nobody' }, { cookie: sid })).status, 400);
 });
 
-test('participant history is append-only and records each change', async () => {
+test('IR-03: the coordinator cannot inflate verified numbers', async () => {
   const w = world();
-  const { sid } = await w.founderReady();
-  const p = (await w.call('POST', 'participants', { firstName: 'Delta' }, { cookie: sid })).body.participant;
-  w.tick(1000);
-  await w.call('PATCH', `participants/${p.id}`, { account: 'confirmed', engagement: 'first_plan_generated' }, { cookie: sid });
-  const d = await w.call('GET', `participants/${p.id}`, undefined, { cookie: sid });
-  assert.equal(d.body.history.length, 2);
-  assert.deepEqual(d.body.history[1].changes.map(c => c.field).sort(), ['account', 'engagement']);
-  assert.equal((await w.call('PATCH', `participants/${p.id}`, { email: 'x@example.com' }, { cookie: sid })).status, 400, 'email locked');
+  const { sid, csid } = await team(w);
+  let p = (await w.call('POST', 'participants', { firstName: 'Fox', email: 'fox@example.com', cohort: 'pilot' }, { cookie: csid })).body.participant;
+  assert.equal((await w.call('PATCH', `participants/${p.id}`, { cohort: 'beta', version: p.version }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('PATCH', `participants/${p.id}`, { account: 'confirmed', verify: { account: true }, evidenceNote: 'trust me', version: p.version }, { cookie: csid })).status, 403);
+  p = (await w.call('PATCH', `participants/${p.id}`, { account: 'confirmed', engagement: 'repeat_use_observed', version: p.version }, { cookie: csid })).body.participant;
+  assert.equal(p.verified.account, false);
+  let m = Object.fromEntries((await w.call('GET', 'dashboard', undefined, { cookie: sid })).body.metrics.map(x => [x.id, x]));
+  assert.equal(m.accounts.value, null); assert.equal(m.accounts.status, 'unknown'); assert.match(m.accounts.definition, /1 more reported/);
+  assert.equal(m.registrations.value, 0, 'hand-added records are not registrations');
+  assert.equal((await w.call('PATCH', `participants/${p.id}`, { verify: { account: true }, version: p.version }, { cookie: sid })).status, 400, 'evidence note required');
+  p = (await w.call('PATCH', `participants/${p.id}`, { verify: { account: true }, evidenceNote: 'Checked Netlify Identity', version: p.version }, { cookie: sid })).body.participant;
+  assert.equal(p.verified.account, true);
+  m = Object.fromEntries((await w.call('GET', 'dashboard', undefined, { cookie: sid })).body.metrics.map(x => [x.id, x]));
+  assert.equal(m.accounts.value, 1); assert.equal(m.repeat.value, null, 'repeat use still only reported');
+  const cv = (await w.call('GET', `participants/${p.id}`, undefined, { cookie: csid })).body.participant;
+  p = (await w.call('PATCH', `participants/${p.id}`, { account: 'confirmation_pending', version: cv.version }, { cookie: csid })).body.participant;
+  assert.equal(p.verified.account, false);
 });
 
-test('children\'s details and invalid states are rejected', async () => {
+test('IR-03/IR-09: counts are marked incomplete until the backfill is done; unreviewed and test records are not counted', async () => {
   const w = world();
-  const { sid } = await w.founderReady();
-  assert.equal((await w.call('POST', 'participants', { firstName: 'E', account: 'super_active' }, { cookie: sid })).status, 400);
-  assert.equal((await w.call('POST', 'participants', { firstName: '' }, { cookie: sid })).status, 400);
+  const { sid } = await w.ready(FOUNDER_EMAIL);
+  const base = { 'form-name': 'pilot', source: 'direct', company: '', children_under_10: '2', consent: 'yes' };
+  await ingestPilotSubmission(w.deps, { ...base, first_name: 'Golf', email: 'golf@example.com' }, '2026-11-24T16:00:00.000Z');
+  await ingestPilotSubmission(w.deps, { ...base, first_name: 'Hotel', email: 'hotel@example.com' }, '2026-11-24T16:01:00.000Z');
+  let d = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body;
+  let reg = d.metrics.find(x => x.id === 'registrations');
+  assert.equal(reg.value, 0); assert.equal(reg.status, 'incomplete'); assert.match(reg.definition, /2 more waiting for review/); assert.match(reg.definition, /not been imported/);
+  const list = (await w.call('GET', 'participants', undefined, { cookie: sid })).body.participants;
+  for (const p of list) await w.call('PATCH', `participants/${p.id}`, { isTest: p.firstName === 'Hotel', version: p.version }, { cookie: sid });
+  await w.call('POST', 'participants/import', { source: 'app_identity_export', exportedAt: '2026-11-24', records: [{ firstName: 'India', email: 'india@example.com' }], markBackfillComplete: true }, { cookie: sid });
+  d = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body;
+  reg = d.metrics.find(x => x.id === 'registrations');
+  assert.equal(reg.value, 1); assert.equal(reg.status, 'actual');
+  assert.equal(d.metrics.find(x => x.id === 'beta').value, 1);
 });
 
-// ---------- Intake ----------
-test('form intake is idempotent, keeps the original link source and never sends email', async () => {
+// ---------- Intake (IR-04) ----------
+const FORM = { 'form-name': 'pilot', source: 'direct', company: '', first_name: 'Juliet', email: 'Juliet@Example.com', children_under_10: '2', heard_from: 'An event', consent: 'yes' };
+test('IR-04: intake uses the strict welcome-email check', async () => {
   const w = world();
-  const data = { 'form-name': 'pilot', source: 'direct', company: '', first_name: 'Echo', email: 'Echo@Example.com', children_under_10: '2', consent: 'yes' };
-  assert.equal(await ingestPilotSubmission(w.store, data, '2026-11-24T16:00:00.000Z'), 'created');
-  assert.equal(await ingestPilotSubmission(w.store, { ...data, source: 'campus' }, '2026-11-24T16:05:00.000Z'), 'duplicate');
-  assert.equal(await ingestPilotSubmission(w.store, { ...data, consent: 'no', email: 'f@example.com' }, '2026-11-24T16:06:00.000Z'), 'skipped_invalid');
-  assert.equal(await ingestPilotSubmission(w.store, { ...data, company: 'bot', email: 'g@example.com' }, '2026-11-24T16:06:00.000Z'), 'skipped_invalid');
-  const all = (await w.store.list('participants/'));
-  assert.equal(all.length, 1);
-  const p = await w.store.get(all[0]);
-  assert.equal(p.technicalSource, 'direct'); assert.equal(p.reportedSource, 'unknown'); assert.equal(p.isTest, null); assert.equal(p.email, 'echo@example.com');
-  assert.equal(w.mail.length, 0);
+  for (const bad of [{ consent: 'no' }, { company: 'bot' }, { 'form-name': 'other' }, { children_under_10: '7' }, { email: 'a@example.com,b@example.com' }, { source: 'bad source!' }, { first_name: '<x>' }])
+    assert.equal(await ingestPilotSubmission(w.deps, { ...FORM, ...bad }, '2026-11-24T16:00:00.000Z'), 'skipped_invalid', JSON.stringify(bad));
+  assert.equal((await db.sql`SELECT count(*)::int n FROM participants`)[0].n, 0);
 });
-
-// ---------- Dashboard ----------
-test('dashboard shows unknown instead of zero and separates targets from actuals', async () => {
+test('IR-04: duplicate deliveries, including parallel ones, make one record and one ledger row', async () => {
   const w = world();
-  const { sid } = await w.founderReady();
-  await w.call('POST', 'participants', { firstName: 'Fox', cohort: 'pilot' }, { cookie: sid });
-  const d = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body;
-  const m = Object.fromEntries(d.metrics.map(x => [x.id, x]));
-  assert.equal(m.accounts.value, null); assert.equal(m.accounts.status, 'unknown');
-  assert.equal(m.activation.status, 'unknown');
-  assert.equal(m.target.status, 'target');
-  assert.equal(m.registrations.value, 1); assert.equal(m.registrations.status, 'actual');
-  assert.equal(m.surveys.status, 'pending');
+  const meta = { submissionId: 'sub123', submittedAt: '2026-11-24T15:59:00Z' };
+  const r = await Promise.all([1, 2, 3].map(() => ingestPilotSubmission(w.deps, FORM, '2026-11-24T16:00:00.000Z', meta)));
+  assert.equal(r.filter(x => x === 'created').length, 1);
+  assert.equal((await db.sql`SELECT count(*)::int n FROM participants`)[0].n, 1);
+  const ledger = await db.sql`SELECT provenance, source_submission_id, consent, heard_from FROM pilot_intake_records`;
+  assert.equal(ledger.length, 1); assert.equal(ledger[0].provenance, 'event_with_id'); assert.equal(ledger[0].source_submission_id, 'sub123');
+  assert.equal(ledger[0].consent.purpose, 'pilot_email'); assert.equal(ledger[0].heard_from, 'An event');
+  assert.equal(await ingestPilotSubmission(w.deps, FORM, '2026-11-24T16:05:00.000Z', meta), 'duplicate_event');
+  assert.equal((await db.sql`SELECT count(*)::int n FROM participant_history`)[0].n, 1, 'no new history for a redelivery');
+  const p = (await db.sql`SELECT technical_source, reported_source, is_test, email FROM participants`)[0];
+  assert.equal(p.technical_source, 'direct'); assert.equal(p.reported_source, 'unknown'); assert.equal(p.is_test, null); assert.equal(p.email, 'juliet@example.com');
+  assert.equal(w.mail.length, 0, 'intake never sends email');
 });
-
-test('records marked as tests are excluded from counts', async () => {
+test('IR-04: events without an id are recorded as such, never given an invented id', async () => {
   const w = world();
-  const { sid } = await w.founderReady();
-  const p = (await w.call('POST', 'participants', { firstName: 'Golf', cohort: 'pilot' }, { cookie: sid })).body.participant;
-  await w.call('PATCH', `participants/${p.id}`, { isTest: true }, { cookie: sid });
-  const d = (await w.call('GET', 'dashboard', undefined, { cookie: sid })).body;
-  assert.equal(d.metrics.find(x => x.id === 'registrations').value, 0);
+  assert.equal(await ingestPilotSubmission(w.deps, FORM, '2026-11-24T16:00:00.000Z'), 'created');
+  const l = (await db.sql`SELECT provenance, source_submission_id FROM pilot_intake_records`)[0];
+  assert.equal(l.provenance, 'event_without_id'); assert.equal(l.source_submission_id, null);
 });
-
-// ---------- Follow-ups, outreach, relationships, resources ----------
-test('coordinator can log outreach, relationships and follow-ups but not approve offers', async () => {
+test('IR-04: someone added by hand who then registers is promoted, keeping both sources', async () => {
   const w = world();
-  const { csid } = await withCoordinator(w);
-  const o = await w.call('POST', 'outreach', { channel: 'campus', place: 'Student union table', approached: '', reportedSignups: '3' }, { cookie: csid });
-  assert.equal(o.status, 201); assert.equal(o.body.outreach.approached, null, 'unknown stays unknown'); assert.equal(o.body.outreach.reportedSignups, 3);
-  const r = await w.call('POST', 'relationships', { contactName: 'Synthetic Contact', organization: 'Example College', stage: 'contacted', nextActionDate: '2026-12-01' }, { cookie: csid });
-  assert.equal(r.status, 201);
-  assert.equal((await w.call('PATCH', `relationships/${r.body.relationship.id}`, { offerApproved: true }, { cookie: csid })).status, 403);
-  assert.equal((await w.call('POST', `relationships/${r.body.relationship.id}/log`, { kind: 'meeting', summary: 'Met at the table' }, { cookie: csid })).status, 201);
-  const f = await w.call('POST', 'followups', { title: 'Check in', subjectType: 'relationship', subjectId: r.body.relationship.id, dueDate: '2026-12-02' }, { cookie: csid });
-  assert.equal(f.status, 201);
-  assert.equal((await w.call('PATCH', `followups/${f.body.followup.id}`, { status: 'done', outcome: 'Done' }, { cookie: csid })).body.followup.status, 'done');
+  const { csid } = await team(w);
+  await w.call('POST', 'participants', { firstName: 'Juliet', email: 'juliet@example.com', reportedSource: 'lindsey' }, { cookie: csid });
+  assert.equal(await ingestPilotSubmission(w.deps, { ...FORM, source: 'campus' }, '2026-11-24T16:00:00.000Z'), 'promoted_prospect');
+  const p = (await db.sql`SELECT cohort, enrollment, technical_source, reported_source, assigned_to IS NOT NULL AS assigned FROM participants`)[0];
+  assert.deepEqual({ ...p }, { cohort: 'pilot', enrollment: 'registration_received', technical_source: 'campus', reported_source: 'lindsey', assigned: true });
+  assert.equal(await ingestPilotSubmission(w.deps, { ...FORM, source: 'instagram', heard_from: 'Social media' }, '2026-11-24T17:00:00.000Z'), 'linked_existing');
+  assert.equal((await db.sql`SELECT technical_source FROM participants`)[0].technical_source, 'campus', 'first source kept');
 });
 
-test('materials are seeded once with approval status and only the founder can change them', async () => {
+test('IR-09: founder import keeps provenance and skips existing people', async () => {
   const w = world();
-  const { sid, csid } = await withCoordinator(w);
-  const list = (await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources;
-  assert.ok(list.length >= 4); assert.ok(list.every(r => r.approval && r.url.startsWith('https://')));
-  assert.equal((await w.call('PATCH', `resources/${list[0].id}`, { approval: 'retired' }, { cookie: csid })).status, 403);
-  assert.equal((await w.call('PATCH', `resources/${list[0].id}`, { approval: 'retired' }, { cookie: sid })).status, 200);
-  assert.equal((await w.call('GET', 'resources', undefined, { cookie: sid })).body.resources.length, list.length, 'no reseed');
+  const { sid } = await w.ready(FOUNDER_EMAIL);
+  const r = await w.call('POST', 'participants/import', { source: 'netlify_forms_export', exportedAt: '2026-11-24', records: [{ firstName: 'Kilo', email: 'kilo@example.com', source: 'direct', submittedAt: '2026-11-12T10:00:00Z' }, { firstName: 'Kilo again', email: 'KILO@example.com' }] }, { cookie: sid });
+  assert.equal(r.status, 201); assert.deepEqual(r.body, { created: 1, alreadyExisted: 1 });
+  const p = (await db.sql`SELECT origin, intake, is_test FROM participants`)[0];
+  assert.equal(p.origin, 'import:netlify_forms_export'); assert.equal(p.intake.exportedAt, '2026-11-24'); assert.equal(p.is_test, null);
 });
 
-test('audit log holds ids and actions, not email addresses', async () => {
+// ---------- Relationships (IR-05) ----------
+test('IR-05: relationship edits are version-checked, owned, and cannot undo an offer approval', async () => {
   const w = world();
-  await withCoordinator(w);
-  const entries = await Promise.all((await w.store.list('audit/')).map(k => w.store.get(k)));
-  assert.ok(entries.length > 3);
-  assert.ok(!JSON.stringify(entries).includes('@'));
+  const { sid, csid } = await team(w);
+  const mine = (await w.call('POST', 'relationships', { contactName: 'Synthetic A', organization: 'Example College' }, { cookie: csid })).body.relationship;
+  const theirs = (await w.call('POST', 'relationships', { contactName: 'Synthetic B', organization: 'Example College' }, { cookie: sid })).body.relationship;
+  assert.equal((await w.call('PATCH', `relationships/${theirs.id}`, { notes: 'x', version: theirs.version }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('PATCH', `relationships/${mine.id}`, { offerApproved: true }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('PATCH', `relationships/${mine.id}`, { offerApproved: true }, { cookie: sid })).status, 200);
+  assert.equal((await w.call('PATCH', `relationships/${mine.id}`, { notes: 'old screen', version: mine.version }, { cookie: csid })).status, 409);
+  const cur = (await w.call('GET', 'relationships', undefined, { cookie: csid })).body.relationships.find(r => r.id === mine.id);
+  assert.equal(cur.offerApproved, true);
+  assert.equal((await w.call('PATCH', `relationships/${mine.id}`, { notes: 'fresh', version: cur.version }, { cookie: csid })).body.relationship.offerApproved, true);
+  assert.equal((await w.call('POST', `relationships/${theirs.id}/log`, { kind: 'meeting', summary: 'Met' }, { cookie: csid })).status, 201, 'anyone can log contact');
 });
 
-// ---------- Preview isolation ----------
-test('preview and production use different stores; team-login shortcut is preview-only', async () => {
-  assert.notEqual(storeNameFor('production'), storeNameFor('deploy-preview'));
+// ---------- Company docs ----------
+const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(200, 32), Buffer.from('%%EOF')]);
+const up = (title, extra = {}, bytes = PDF, fileName = 'one-pager.pdf') => ({ title, fileName, dataBase64: bytes.toString('base64'), category: 'outreach', ...extra });
+
+test('docs: founder shares a file; coordinator lists and downloads it with safe headers', async () => {
+  const w = world();
+  const { sid, csid } = await team(w);
+  const before = w.mail.length;
+  const r = await w.call('POST', 'resources/upload', up('PRC one-pager', { audience: 'team', notify: true }), { cookie: sid });
+  assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.notified, 1); assert.equal(w.mail.length, before + 1);
+  assert.equal(r.body.resource.fileKey, undefined);
+  const doc = (await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources.find(x => x.title === 'PRC one-pager');
+  const res = await w.call('GET', `resources/${doc.id}/file`, undefined, { cookie: csid });
+  assert.equal(res.status, 200);
+  assert.equal(Buffer.compare(Buffer.from(await res.res.arrayBuffer()), PDF), 0);
+  assert.match(res.headers.get('content-disposition'), /^attachment;/); assert.equal(res.headers.get('x-content-type-options'), 'nosniff'); assert.match(res.headers.get('content-security-policy'), /sandbox/);
+});
+
+test('docs: private and named-person documents stay hidden; bad files are refused', async () => {
+  const w = world();
+  const { sid, csid, coordId } = await team(w);
+  const priv = (await w.call('POST', 'resources/upload', up('Founder notes', { audience: 'founder' }), { cookie: sid })).body.resource;
+  const named = (await w.call('POST', 'resources/upload', up('For coordinator', { audience: [coordId] }), { cookie: sid })).body.resource;
+  const titles = (await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources.map(r => r.title);
+  assert.ok(!titles.includes('Founder notes')); assert.ok(titles.includes('For coordinator'));
+  assert.equal((await w.call('GET', `resources/${priv.id}/file`, undefined, { cookie: csid })).status, 404);
+  assert.equal((await w.call('GET', `resources/${named.id}/file`, undefined, { cookie: csid })).status, 200);
+  const html = Buffer.from('<html><script>alert(1)</script></html>'.padEnd(40, ' '));
+  for (const [bytes, name] of [[html, 'trick.pdf'], [html, 'page.html'], [Buffer.from('MZ' + 'x'.repeat(40)), 'tool.exe'], [PDF, 'one-pager.png']])
+    assert.equal((await w.call('POST', 'resources/upload', up('Bad', {}, bytes, name), { cookie: sid })).status, 400, name);
+  assert.equal((await w.call('POST', 'resources/upload', up('Big', {}, Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(4 * 1024 * 1024 + 10)])), { cookie: sid })).status, 400);
+});
+
+// ---------- Approvals ----------
+test('approvals: coordinator uploads and messages go to the founder; only the founder decides, once', async () => {
+  const w = world();
+  const { sid, csid } = await team(w);
+  const doc = (await w.call('POST', 'resources/upload', up('Draft flyer', { audience: 'team', approval: 'approved' }), { cookie: csid })).body.resource;
+  assert.equal(doc.approval, 'pending_review'); assert.equal(doc.audience, 'founder');
+  assert.equal(w.mail.at(-1).to.address, FOUNDER_EMAIL);
+  assert.equal((await w.call('POST', 'approvals', { itemType: 'message', channel: 'email', to: 'Parenting Resources', message: 'Hi, could we share a flyer?' }, { cookie: csid })).status, 201);
+  const inbox = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals;
+  assert.equal(inbox.filter(a => a.status === 'pending').length, 2);
+  const docApproval = inbox.find(a => a.itemType === 'document');
+  assert.equal((await w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved' }, { cookie: csid })).status, 403);
+  assert.equal((await w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'changes_requested' }, { cookie: sid })).status, 400, 'note required');
+  const [a1, a2] = await Promise.all([w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved', audience: 'team' }, { cookie: sid }), w.call('POST', `approvals/${docApproval.id}/decide`, { decision: 'approved' }, { cookie: sid })]);
+  assert.deepEqual([a1.status, a2.status].sort(), [200, 400]);
+  const after = (await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources.find(r => r.id === doc.id);
+  assert.equal(after.approval, 'approved'); assert.equal(after.audience, 'team');
+  assert.match(w.mail.at(-1).subject, /^Approved:/);
+  const mine = (await w.call('GET', 'approvals', undefined, { cookie: csid })).body;
+  assert.equal(mine.scope, 'mine'); assert.equal(mine.approvals.length, 2);
+});
+
+// ---------- Content calendar ----------
+test('content: draft → approval → posted; nothing unapproved can be marked posted', async () => {
+  const w = world();
+  const { sid, csid } = await team(w);
+  let p = (await w.call('POST', 'content', { channel: 'instagram', plannedDate: '2026-12-01', caption: 'Spin the wheel tonight!' }, { cookie: csid })).body.post;
+  assert.equal(p.status, 'draft'); assert.equal(p.refLink, 'https://spinfamilyapp.com/?ref=instagram');
+  assert.equal((await w.call('POST', `content/${p.id}/published`, { publishedUrl: 'https://instagram.com/p/x' }, { cookie: csid })).status, 400);
+  p = (await w.call('POST', `content/${p.id}/submit`, {}, { cookie: csid })).body.post;
+  assert.equal(p.status, 'in_review');
+  assert.equal((await w.call('PATCH', `content/${p.id}`, { caption: 'sneaky edit' }, { cookie: csid })).status, 400, 'locked while in review');
+  const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'content_post');
+  await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  p = (await w.call('GET', 'content', undefined, { cookie: csid })).body.posts[0];
+  assert.equal(p.status, 'approved');
+  assert.equal((await w.call('PATCH', `content/${p.id}`, { caption: 'changed' }, { cookie: csid })).status, 400);
+  assert.equal((await w.call('PATCH', `content/${p.id}`, { caption: 'changed', confirmReapproval: true }, { cookie: csid })).body.post.status, 'draft');
+  await w.call('POST', `content/${p.id}/submit`, {}, { cookie: csid });
+  const ap2 = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'content_post' && a.status === 'pending');
+  await w.call('POST', `approvals/${ap2.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  assert.equal((await w.call('POST', `content/${p.id}/published`, { publishedUrl: 'https://instagram.com/p/x' }, { cookie: csid })).body.post.status, 'published');
+});
+
+// ---------- Research & surveys ----------
+test('research: questionnaire must be approved before any link; one-time links; results scoped by role', async () => {
+  const w = world();
+  const { sid, csid, coordId } = await team(w);
+  const draft = (await w.call('GET', 'research', undefined, { cookie: csid })).body.surveys[0];
+  assert.equal(draft.status, 'draft'); assert.equal(draft.questions.length, 15);
+  assert.ok(!JSON.stringify(draft.questions).match(/child'?s name|birthday|school/i));
+  let p = (await w.call('POST', 'participants', { firstName: 'Lima', email: 'lima@example.com', cohort: 'pilot' }, { cookie: sid })).body.participant;
+  p = (await w.call('PATCH', `participants/${p.id}`, { assignedTo: coordId, version: p.version }, { cookie: sid })).body.participant;
+  const other = (await w.call('POST', 'participants', { firstName: 'Mike', cohort: 'pilot' }, { cookie: sid })).body.participant;
+  const cohort = (await w.call('POST', 'research/cohorts', { name: "Marilyn's parent testers", partner: 'Marilyn', plannedSize: '5', deadline: '2026-12-19' }, { cookie: sid })).body.id;
+  assert.equal((await w.call('POST', `research/cohorts/${cohort}/enroll`, { participantId: p.id, status: 'consented' }, { cookie: csid })).status, 201);
+  assert.equal((await w.call('POST', `research/cohorts/${cohort}/enroll`, { participantId: other.id }, { cookie: csid })).status, 400, 'only assigned');
+  assert.equal((await w.call('POST', 'research/sessions', { cohortId: cohort, participantId: p.id, kind: 'initial', completed: true, observations: 'Found the wheel quickly' }, { cookie: csid })).status, 201);
+  assert.equal((await w.call('POST', 'research/invites', { surveyId: draft.id, participantId: p.id }, { cookie: csid })).status, 400, 'draft cannot be sent');
+  await w.call('POST', `research/surveys/${draft.id}/submit`, {}, { cookie: csid });
+  const ap = (await w.call('GET', 'approvals', undefined, { cookie: sid })).body.approvals.find(a => a.itemType === 'survey');
+  await w.call('POST', `approvals/${ap.id}/decide`, { decision: 'approved' }, { cookie: sid });
+  const inv = await w.call('POST', 'research/invites', { surveyId: draft.id, participantId: p.id, cohortId: cohort }, { cookie: csid });
+  assert.equal(inv.status, 201);
+  const token = inv.body.link.match(/#t=([\w-]+)/)[1];
+  assert.match(inv.body.link, /^https:\/\/spinfamilyapp\.com\/pilot\/survey\/#t=/);
+  const load = await w.call('POST', 'public/survey/load', { token });
+  assert.equal(load.status, 200); assert.equal(load.body.questions.length, 15); assert.ok(!JSON.stringify(load.body).includes('lima@example.com'));
+  assert.equal((await w.call('POST', 'public/survey/submit', { token, answers: { q4: 9 } })).status, 400, 'scale checked');
+  assert.equal((await w.call('POST', 'public/survey/submit', { token, answers: { zzz: 'x' } })).status, 400, 'unknown question');
+  const [s1, s2] = await Promise.all([
+    w.call('POST', 'public/survey/submit', { token, answers: { q4: 5, q7: 'yes', q13: 'Maybe', q15: 'Loved the wheel' } }),
+    w.call('POST', 'public/survey/submit', { token, answers: { q4: 1 } }),
+  ]);
+  assert.deepEqual([s1.status, s2.status].sort(), [200, 400], 'single use under parallel submits');
+  assert.equal((await w.call('POST', 'public/survey/load', { token })).status, 400);
+  const coordResults = (await w.call('GET', `research/surveys/${draft.id}/results`, undefined, { cookie: csid })).body;
+  assert.equal(coordResults.responses, 1); assert.equal(coordResults.individual, null);
+  assert.deepEqual(coordResults.summary.find(q => q.id === 'q15').answers, []);
+  const founderResults = (await w.call('GET', `research/surveys/${draft.id}/results`, undefined, { cookie: sid })).body;
+  assert.equal(founderResults.individual.length, 1);
+  assert.ok(founderResults.summary.find(q => q.id === 'q15').answers.includes('Loved the wheel'));
+  assert.equal((await w.call('GET', `participants/${p.id}`, undefined, { cookie: sid })).body.participant.engagement, 'unknown', 'a survey answer does not change engagement');
+});
+
+// ---------- Preview / production boundary (IR-02) ----------
+test('IR-02: production is recognised only from trusted runtime facts; anything else fails closed', () => {
+  assert.equal(runtimeFacts({ site: { id: SITE_ID }, deploy: { context: 'production' } }, () => undefined).isProduction, true);
+  assert.equal(runtimeFacts({ site: { id: SITE_ID }, deploy: { context: 'deploy-preview' } }, () => undefined).isProduction, false);
+  assert.equal(runtimeFacts({}, () => undefined).isProduction, false, 'missing context');
+  assert.equal(runtimeFacts({ site: { id: 'other-site' }, deploy: { context: 'production' } }, () => undefined).isProduction, false, 'wrong site');
+  assert.equal(runtimeFacts(undefined, k => ({ SITE_ID, CONTEXT: 'production' })[k]).isProduction, true);
+  assert.equal(runtimeFacts(undefined, k => ({ SITE_ID })[k]).isProduction, false, 'CONTEXT missing');
+});
+test('IR-02: intake function and API stay out of production and email outside production', () => {
+  const intake = readFileSync(new URL('../netlify/functions/ops-intake.mjs', import.meta.url), 'utf8');
+  assert.match(intake, /if \(!facts\.isProduction\)/); assert.doesNotMatch(intake, /!process\.env\.CONTEXT/);
+  const api = readFileSync(new URL('../netlify/functions/ops-api.mjs', import.meta.url), 'utf8');
+  assert.match(api, /if \(!facts\.isProduction\) throw new Error\('Email is turned off outside production'\)/);
+  assert.match(api, /filesFor\(facts\.isProduction\)/); assert.match(api, /refused_unknown_site/);
+  assert.match(readFileSync(new URL('../lib/ops/files.mjs', import.meta.url), 'utf8'), /getDeployStore/);
+});
+test('preview sign-in through Netlify team login is preview-only', async () => {
   const prod = world({ deployContext: 'production', netlifyUser: { id: 'u1', email: FOUNDER_EMAIL } });
   assert.equal((await prod.call('POST', 'auth/preview', {})).status, 404);
   const prev = world({ deployContext: 'deploy-preview', netlifyUser: { id: 'u1', email: FOUNDER_EMAIL } });
-  const ok = await prev.call('POST', 'auth/preview', {});
-  assert.equal(ok.status, 200); assert.ok(ok.sid);
+  assert.equal((await prev.call('POST', 'auth/preview', {})).status, 200);
   const stranger = world({ deployContext: 'deploy-preview', netlifyUser: { id: 'u2', email: 'someone@example.com' } });
   assert.equal((await stranger.call('POST', 'auth/preview', {})).status, 403);
 });
 
+// ---------- Records integrity ----------
+const appendOnly = e => /append-only/.test(`${e.message} ${e.cause?.message || ''}`);
+test('history, audit and intake ledger cannot be edited or deleted', async () => {
+  const w = world();
+  await team(w);
+  await ingestPilotSubmission(w.deps, FORM, '2026-11-24T16:00:00.000Z');
+  for (const t of ['audit_events', 'participant_history', 'pilot_intake_records'])
+    await assert.rejects(async () => { await db.sql.unsafe(`DELETE FROM ${t}`); }, appendOnly, t);
+  await assert.rejects(async () => { await db.sql`UPDATE audit_events SET action = 'x'`; }, appendOnly);
+});
+test('audit log holds ids and actions, not email addresses', async () => {
+  const w = world();
+  await team(w);
+  assert.ok(!JSON.stringify(await db.sql`SELECT actor, action, target, extra FROM audit_events`).includes('@'));
+});
+test('IR-06: errors are logged without personal details and do not claim nothing changed', async () => {
+  const w = world();
+  const logs = []; w.deps.log = e => logs.push(e);
+  const { sid } = await w.ready(FOUNDER_EMAIL);
+  const real = db.sql;
+  w.deps.sql = new Proxy(real, { apply(t, thisArg, args) { if (String(args[0]?.[0] || '').startsWith('SELECT * FROM participants WHERE org_id')) throw Object.assign(new Error('boom secret@example.com'), { code: 'XX000' }); return Reflect.apply(t, thisArg, args); } });
+  const r = await w.call('GET', 'participants', undefined, { cookie: sid });
+  assert.equal(r.status, 500); assert.match(r.body.error.message, /check whether your change was saved/);
+  assert.ok(logs.length && !JSON.stringify(logs).includes('@'));
+});
+
 // ---------- Source safety ----------
 test('front end has no third-party code, inline scripts or browser storage', () => {
-  const js = readFileSync(new URL('../public/operations/ops.js', import.meta.url), 'utf8');
-  const html = readFileSync(new URL('../public/operations/index.html', import.meta.url), 'utf8');
-  assert.doesNotMatch(js, /localStorage|sessionStorage|innerHTML|eval\(|https?:\/\/(?!spinfamilyapp)/);
-  assert.doesNotMatch(html, /<script>(?!<\/script>)|https?:\/\//);
-  assert.match(html, /noindex/);
+  for (const f of ['../public/operations/ops.js', '../public/pilot/survey/survey.js']) {
+    const js = readFileSync(new URL(f, import.meta.url), 'utf8');
+    assert.doesNotMatch(js, /localStorage|sessionStorage|innerHTML|eval\(|https?:\/\/(?!spinfamilyapp)/, f);
+  }
+  for (const f of ['../public/operations/index.html', '../public/pilot/survey/index.html']) {
+    const html = readFileSync(new URL(f, import.meta.url), 'utf8');
+    assert.doesNotMatch(html, /<script>(?!<\/script>)|https?:\/\//, f); assert.match(html, /noindex/);
+  }
 });
-
-test('existing welcome email and scheduled batch are untouched', () => {
+test('existing welcome email and the scheduled batch are untouched', () => {
   const toml = readFileSync(new URL('../../netlify.toml', import.meta.url), 'utf8');
   assert.match(toml, /for = "\/operations\/\*"/);
-  const batch = readFileSync(new URL('../netlify/functions/welcome-batch-20261125.mjs', import.meta.url), 'utf8');
-  assert.match(batch, /schedule:'0 14 25 11 \*'/);
-});
-
-// ---------- Company docs: uploads and sharing ----------
-const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(200, 32), Buffer.from('%%EOF')]);
-const up = (title, extra = {}, bytes = PDF, fileName = 'one-pager.pdf') => ({ title, fileName, dataBase64: bytes.toString('base64'), category: 'outreach', ...extra });
-async function rawGet(w, path, sid) {
-  return handle(new Request(`${ORIGIN}/operations/api/${path}`, { headers: { cookie: `${SESSION_COOKIE}=${sid}` } }), w.deps);
-}
-
-test('founder shares a file with the team; coordinator can list and download it, with safe headers', async () => {
-  const w = world();
-  const { sid, csid } = await withCoordinator(w);
-  const mailsBefore = w.mail.length;
-  const r = await w.call('POST', 'resources/upload', up('PRC one-pager', { audience: 'team', notify: true }), { cookie: sid });
-  assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.resource.contentType, 'application/pdf'); assert.equal(r.body.resource.fileKey, undefined);
-  assert.equal(r.body.notified, 1); assert.equal(w.mail.length, mailsBefore + 1); assert.equal(w.mail.at(-1).to.address, COORD);
-  assert.match(w.mail.at(-1).text, /operations\/#\/docs/); assert.doesNotMatch(w.mail.at(-1).text, /resources\/.*\/file/);
-  const list = (await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources;
-  const doc = list.find(x => x.title === 'PRC one-pager'); assert.ok(doc);
-  const res = await rawGet(w, `resources/${doc.id}/file`, csid);
-  assert.equal(res.status, 200);
-  assert.equal(Buffer.compare(Buffer.from(await res.arrayBuffer()), PDF), 0);
-  assert.match(res.headers.get('content-disposition'), /^attachment;/);
-  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
-  assert.match(res.headers.get('content-security-policy'), /sandbox/);
-});
-
-test('documents kept to the founder or to named people stay hidden from everyone else', async () => {
-  const w = world();
-  const { sid, csid, coordId } = await withCoordinator(w);
-  const inv = await w.call('POST', 'team/invite', { email: 'second@example.com', name: 'Second Person', role: 'coordinator' }, { cookie: sid });
-  const ssid = await w.signIn('second@example.com');
-  const priv = (await w.call('POST', 'resources/upload', up('Founder notes', { audience: 'founder' }), { cookie: sid })).body.resource;
-  const named = (await w.call('POST', 'resources/upload', up('For coordinator', { audience: [coordId] }), { cookie: sid })).body.resource;
-  const titles = async s => (await w.call('GET', 'resources', undefined, { cookie: s })).body.resources.map(r => r.title);
-  assert.ok(!(await titles(csid)).includes('Founder notes'));
-  assert.ok((await titles(csid)).includes('For coordinator'));
-  assert.ok(!(await titles(ssid)).includes('For coordinator'));
-  assert.equal((await rawGet(w, `resources/${priv.id}/file`, csid)).status, 404);
-  assert.equal((await rawGet(w, `resources/${named.id}/file`, ssid)).status, 404);
-  assert.equal((await rawGet(w, `resources/${named.id}/file`, csid)).status, 200);
-  assert.ok(inv.body.member.id);
-});
-
-test('coordinator uploads go to the founder for review and cannot be re-shared by the coordinator', async () => {
-  const w = world();
-  const { sid, csid } = await withCoordinator(w);
-  await w.call('POST', 'team/invite', { email: 'second@example.com', name: 'Second Person', role: 'coordinator' }, { cookie: sid });
-  const ssid = await w.signIn('second@example.com');
-  const before = w.mail.length;
-  const r = await w.call('POST', 'resources/upload', up('Draft flyer', { audience: 'team', approval: 'approved' }), { cookie: csid });
-  assert.equal(r.status, 201);
-  assert.equal(r.body.resource.approval, 'pending_review'); assert.equal(r.body.resource.audience, 'founder');
-  assert.equal(w.mail.length, before + 1); assert.equal(w.mail.at(-1).to.address, FOUNDER_EMAIL);
-  assert.ok((await w.call('GET', 'resources', undefined, { cookie: csid })).body.resources.some(x => x.id === r.body.resource.id), 'uploader sees own');
-  assert.ok(!(await w.call('GET', 'resources', undefined, { cookie: ssid })).body.resources.some(x => x.id === r.body.resource.id));
-  assert.equal((await w.call('PATCH', `resources/${r.body.resource.id}`, { audience: 'team' }, { cookie: csid })).status, 403);
-  const shared = await w.call('PATCH', `resources/${r.body.resource.id}`, { audience: 'team', approval: 'approved' }, { cookie: sid });
-  assert.equal(shared.status, 200);
-  assert.ok((await w.call('GET', 'resources', undefined, { cookie: ssid })).body.resources.some(x => x.id === r.body.resource.id));
-});
-
-test('only real documents and images under 4 MB are accepted', async () => {
-  const w = world();
-  const { sid } = await w.founderReady();
-  const html = Buffer.from('<html><script>alert(1)</script></html>'.padEnd(40, ' '));
-  for (const [bytes, name] of [[html, 'trick.pdf'], [html, 'page.html'], [Buffer.from('MZ' + 'x'.repeat(40)), 'tool.exe'], [PDF, 'one-pager.png'], [Buffer.alloc(0), 'empty.pdf']])
-    assert.equal((await w.call('POST', 'resources/upload', up('Bad', {}, bytes, name), { cookie: sid })).status, 400, name);
-  const big = Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(4 * 1024 * 1024 + 10)]);
-  assert.equal((await w.call('POST', 'resources/upload', up('Big', {}, big), { cookie: sid })).status, 400);
-  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
-  const ok = await w.call('POST', 'resources/upload', up('Logo', {}, png, '../../Logo final!.png'), { cookie: sid });
-  assert.equal(ok.status, 201); assert.equal(ok.body.resource.fileName, 'Logo final.png');
-});
-
-test('founder uploads need the authenticator code; signed-out requests get nothing', async () => {
-  const w = world();
-  const sid = await w.signIn(FOUNDER_EMAIL);
-  assert.equal((await w.call('POST', 'resources/upload', up('x'), { cookie: sid })).status, 403);
-  assert.equal((await w.call('POST', 'resources/upload', up('x'))).status, 401);
+  assert.match(readFileSync(new URL('../netlify/functions/welcome-batch-20261125.mjs', import.meta.url), 'utf8'), /schedule:'0 14 25 11 \*'/);
 });

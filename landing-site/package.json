@@ -11,6 +11,10 @@
   },
   "dependencies": {
     "@netlify/blobs": "^10.0.0",
+    "@netlify/database": "^2.0.4",
     "nodemailer": "10.6.1"
+  },
+  "devDependencies": {
+    "@netlify/database-dev": "^1.0.2"
   }
 }
