@@ -580,7 +580,11 @@ test('front end has no third-party code, inline scripts or browser storage', () 
 test('existing welcome email and the scheduled batch are untouched', () => {
   const toml = readFileSync(new URL('../../netlify.toml', import.meta.url), 'utf8');
   assert.match(toml, /for = "\/operations\/\*"/);
-  assert.match(readFileSync(new URL('../netlify/functions/welcome-batch-20261125.mjs', import.meta.url), 'utf8'), /schedule:'0 14 25 11 \*'/);
+  // The batch function is owned by landing (now its bounded recovery version); the workspace never imports or changes it.
+  const batch = readFileSync(new URL('../netlify/functions/welcome-batch-20261125.mjs', import.meta.url), 'utf8');
+  assert.match(batch, /recoverWelcome/);
+  for (const f of ['core', 'records', 'outbox', 'docs', 'approvals', 'content', 'research'])
+    assert.doesNotMatch(readFileSync(new URL(`../lib/ops/${f}.mjs`, import.meta.url), 'utf8'), /welcome-batch|welcome-recovery|pilot-welcome-v1/, f);
 });
 
 test('preview founder login mapping: works only on previews, only for the configured Netlify login', async () => {
