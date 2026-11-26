@@ -36,8 +36,31 @@ function accountPanel(open,mode='signin'){
     (activeUser||sessionUncertain?signOut:email).focus();
   }
 }
-openSignIn.addEventListener('click',()=>accountPanel(true,'signin'));
-openCreate.addEventListener('click',()=>accountPanel(true,'signup'));
+// Account access stays global, but expanded account details must not persist
+// across tabs or require signing out to dismiss.
+openSignIn.addEventListener('click',()=>{
+  const opening=panel.hidden;
+  accountPanel(opening,'signin');
+  if(!opening)openSignIn.focus();
+});
+openCreate.addEventListener('click',()=>{
+  const opening=panel.hidden;
+  accountPanel(opening,'signup');
+  if(!opening)openCreate.focus();
+});
+byId('accountClose').addEventListener('click',()=>{
+  accountPanel(false);
+  openSignIn.focus();
+});
+document.querySelectorAll('.nav button[data-page]').forEach(button=>{
+  button.addEventListener('click',()=>{if(!panel.hidden)accountPanel(false);});
+});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&!panel.hidden){
+    accountPanel(false);
+    openSignIn.focus();
+  }
+});
 function resetActivities() {
   window.dispatchEvent(new CustomEvent('spinfamily:history',{detail:null}));
   // Clearing a household's activities on logout prevents account crossover.
