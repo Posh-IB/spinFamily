@@ -203,6 +203,10 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     .account-bar-actions button{cursor:pointer;border-radius:11px;padding:8px 10px;background:#fff;border:1px solid #80b8b3;color:#13555a;font:inherit;font-weight:800;font-size:12px}
     #accountOpenCreate{background:#147d86;color:#fff;border-color:#147d86}
     #plusAccountPanel{max-width:600px;margin:10px 15px;padding:16px}
+    .account-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+    .account-panel-heading h3{margin:0}
+    .account-panel-heading button{border:1px solid #cdd8db;background:#fff;color:#17445a;border-radius:10px;padding:7px 12px;min-height:40px;font-weight:800;cursor:pointer}
+    .account-panel-heading button:focus-visible{outline:3px solid #f58469;outline-offset:2px}
     #plusAccountPanel .add-form{max-width:480px}
     #plusAccountPanel button:disabled{opacity:.6;cursor:wait}
     #deleteAccountBox{margin-top:16px;border-top:1px solid #E2E8F0;padding-top:12px}
@@ -231,7 +235,7 @@ body{color:var(--navy);background:linear-gradient(135deg,#fcdeca,#fef9ef 48%,#fa
     </div>
   </section>
   <section class="card" id="plusAccountPanel" aria-label="SpinFamily membership and account" hidden>
-  <h3>Family account</h3>
+  <div class="account-panel-heading"><h3>Family account</h3><button type="button" id="accountClose" aria-label="Close account details">Close ×</button></div>
   <p id="plusAccountStatus" role="status" aria-live="polite">Checking account services…</p>
   <form id="plusAuthForm" class="add-form">
     <input id="plusEmail" type="email" autocomplete="email" required placeholder="Email address" aria-label="Email address">
